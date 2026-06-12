@@ -1,24 +1,28 @@
-name: Decode icon
+name: Generate icon
 on:
   push:
     branches: ["gh-pages"]
-    paths: ["icon.b64"]
+    paths: ["make_icon.py"]
   workflow_dispatch: {}
 permissions:
   contents: write
 jobs:
-  decode:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode base64 to PNG
-        run: base64 -d icon.b64 > apple-touch-icon.png
-      - name: Cleanup test file
-        run: git rm --ignore-unmatch -q upload-test.png || true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Pillow
+        run: pip install pillow
+      - name: Generate icon
+        run: python make_icon.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm --ignore-unmatch -q icon.b64 upload-test.png || true
           git add apple-touch-icon.png
-          git diff --cached --quiet || git commit -m "Decode apple-touch-icon.png from icon.b64"
+          git diff --cached --quiet || git commit -m "Generate apple-touch-icon.png"
           git push
