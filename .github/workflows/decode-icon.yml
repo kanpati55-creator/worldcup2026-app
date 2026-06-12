@@ -1,0 +1,24 @@
+name: Decode icon
+on:
+  push:
+    branches: ["gh-pages"]
+    paths: ["icon.b64"]
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  decode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode base64 to PNG
+        run: base64 -d icon.b64 > apple-touch-icon.png
+      - name: Cleanup test file
+        run: git rm --ignore-unmatch -q upload-test.png || true
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apple-touch-icon.png
+          git diff --cached --quiet || git commit -m "Decode apple-touch-icon.png from icon.b64"
+          git push
