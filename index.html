@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FIFA ワールドカップ 2026 - 試合結果</title>
+  <style>
+    :root {
+      --primary: #1a3a5c;
+      --secondary: #c8102e;
+      --accent: #f5a623;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --text: #1a202c;
+      --muted: #718096;
+      --border: #e2e8f0;
+      --win: #48bb78;
+      --loss: #fc8181;
+      --draw: #f6ad55;
+      --upcoming: #63b3ed;
+      --live: #fc8181;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Hiragino Sans', 'Noto Sans JP', 'メイリオ', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, var(--primary) 0%, #0d2137 100%);
+      color: white;
+      padding: 24px 20px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: '';
+      position: absolute;
+      top: -30px; left: -30px;
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+    }
+    header h1 { font-size: 1.8em; font-weight: 800; letter-spacing: 0.02em; }
+    header p { margin-top: 6px; font-size: 0.95em; opacity: 0.85; }
+    .header-meta {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 12px;
+      font-size: 0.82em;
+      opacity: 0.75;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--secondary);
+      color: white;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.78em;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    /* ─── API fetch bar ─── */
+    .fetch-bar {
+      background: #1e3a5f;
+      color: #a0c4ff;
+      text-align: center;
+      padding: 8px;
+      font-size: 0.82em;
+    }
+    #fetch-status { font-weight: bold; }
+    button.refresh-btn {
+      background: var(--accent);
+      color: var(--primary);
+      border: none;
+      padding: 4px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82em;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+
+    /* ─── Group tabs ─── */
+    .tabs-wrapper {
+      background: white;
+      border-bottom: 2px solid var(--border);
+      overflow-x: auto;
+      display: flex;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .tab-btn {
+      padding: 12px 18px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    .tab-btn:hover { background: #f7fafc; color: var(--primary); }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--secondary);
+      background: #f7fafc;
+    }
+
+    /* ─── Main content ─── */
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+
+    .group-section { display: none; }
+    .group-section.active { display: block; }
+
+    .group-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .group-icon {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1em;
+    }
+    .group-title h2 { font-size: 1.3em; color: var(--primary); }
+    .group-title span { font-size: 0.85em; color: var(--muted); }
+
+    /* ─── Standings table ─── */
+    .standings {
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      margin-bottom: 20px;
+    }
+    .standings-header {
+      background: var(--primary);
+      color: white;
+      padding: 10px 16px;
+      font-size: 0.82em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    table.standings-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88em;
+    }
+    .standings-table thead th {
+      background: #f0f4f8;
+      padding: 8px 10px;
+      text-align: center;
+      font-weight: 700;
+      color: var(--muted);
+      font-size: 0.8em;
+    }
+    .standings-table thead th:first-child { text-align: left; }
+    .standings-table tbody tr {
+      border-top: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .standings-table tbody tr:hover { background: #f7fafc; }
+    .standings-table td {
+      padding: 10px 10px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .standings-table td:first-child { text-align: left; }
+    .team-rank {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--muted);
+      font-size: 0.8em;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .team-rank.q { background: var(--primary); color: white; }
+    .flag { font-size: 1.2em; margin-right: 6px; }
+    .pts { font-weight: 800; color: var(--primary); font-size: 1em; }
+    .gd-pos { color: var(--win); font-weight: 600; }
+    .gd-neg { color: var(--loss); font-weight: 600; }
+
+    /* ─── Match cards ─── */
+    .matches-header {
+      font-size: 0.85em;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin: 20px 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .matches-header::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .match-date-group { margin-bottom: 16px; }
+    .match-date-label {
+      font-size: 0.8em;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 4px 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .match-date-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .match-card {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border-left: 4px solid transparent;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .match-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .match-card.finished { border-left-color: #68d391; }
+    .match-card.upcoming { border-left-color: var(--upcoming); }
+    .match-card.today { border-left-color: var(--accent); }
+
+    .match-inner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .team-side {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .team-side.right { flex-direction: row-reverse; text-align: right; }
+    .team-name {
+      font-weight: 600;
+      font-size: 0.92em;
+      line-height: 1.3;
+    }
+    .team-name small { display: block; font-size: 0.75em; color: var(--muted); font-weight: 400; }
+
+    .score-box {
+      min-width: 80px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .score {
+      font-size: 1.5em;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: var(--primary);
+    }
+    .score-sep { color: var(--muted); margin: 0 4px; }
+    .vs-text {
+      font-size: 0.8em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .match-time {
+      font-size: 0.78em;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 0.72em;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .status-badge.done { background: #c6f6d5; color: #276749; }
+    .status-badge.upcoming { background: #bee3f8; color: #2a69ac; }
+    .status-badge.today { background: #fef3c7; color: #92400e; }
+    .match-venue {
+      font-size: 0.75em;
+      color: var(--muted);
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .section-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 24px 0;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 0.8em;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 32px;
+    }
+    footer a { color: var(--primary); }
+
+    /* ─── まとめページ ─── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .summary-card {
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .summary-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
+    .summary-card-header {
+      background: linear-gradient(135deg, var(--primary), #0d2137);
+      color: white;
+      padding: 8px 14px;
+      font-weight: 800;
+      font-size: 0.95em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .summary-card-header small { font-weight: 400; opacity: 0.75; font-size: 0.78em; }
+    .summary-row {
+      display: flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-top: 1px solid var(--border);
+      font-size: 0.85em;
+      gap: 8px;
+    }
+    .summary-row.qualify { background: #f0fff4; }
+    .summary-rank {
+      width: 20px; height: 20px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--muted);
+      font-size: 0.75em;
+      font-weight: 700;
+    }
+    .summary-row.qualify .summary-rank { background: var(--win); color: white; }
+    .summary-team { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .summary-stat { color: var(--muted); font-size: 0.85em; min-width: 34px; text-align: right; }
+    .summary-pts { font-weight: 800; color: var(--primary); min-width: 30px; text-align: right; }
+    .summary-note {
+      font-size: 0.78em;
+      color: var(--muted);
+      margin: 0 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .summary-note .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--win);
+      display: inline-block;
+    }
+
+    @media (max-width: 520px) {
+      header h1 { font-size: 1.3em; }
+      .team-name { font-size: 0.82em; }
+      .score { font-size: 1.2em; }
+      .tab-btn { padding: 10px 12px; font-size: 0.82em; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="badge">🏆 FIFA ワールドカップ 2026</div>
+  <h1>グループステージ 試合結果 &amp; 日程</h1>
+  <p>カナダ・メキシコ・アメリカ共同開催 ｜ 2026年6月11日〜7月19日</p>
+  <div class="header-meta">
+    <span>⚽ 48カ国出場</span>
+    <span>📋 全12グループ</span>
+    <span>🗓️ 104試合</span>
+  </div>
+</header>
+
+<div class="fetch-bar">
+  <span id="fetch-status">📡 試合データを読み込み中...</span>
+  <button class="refresh-btn" onclick="loadData()">🔄 更新</button>
+</div>
+
+<div class="tabs-wrapper" id="tabs">
+  <!-- tabs generated by JS -->
+</div>
+
+<main id="main-content">
+  <p style="text-align:center;padding:40px;color:#718096;">データを読み込んでいます...</p>
+</main>
+
+<footer>
+  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> ｜ 更新: 2026年6月12日
+  <br>スコアは既知の結果を反映しています
+</footer>
+
+<script>
+// ─── チーム名マッピング（英語→日本語）─────────────────────
+const JA = {
+  "Mexico": "メキシコ 🇲🇽",
+  "South Africa": "南アフリカ 🇿🇦",
+  "South Korea": "韓国 🇰🇷",
+  "Czechia": "チェコ 🇨🇿",
+  "Czech Republic": "チェコ 🇨🇿",
+  "UEFA Path D winner": "チェコ 🇨🇿",
+  "Canada": "カナダ 🇨🇦",
+  "Bosnia and Herzegovina": "ボスニア・ヘルツェゴビナ 🇧🇦",
+  "UEFA Path A winner": "ボスニア・ヘルツェゴビナ 🇧🇦",
+  "Qatar": "カタール 🇶🇦",
+  "Switzerland": "スイス 🇨🇭",
+  "Brazil": "ブラジル 🇧🇷",
+  "Morocco": "モロッコ 🇲🇦",
+  "Haiti": "ハイチ 🇭🇹",
+  "Scotland": "スコットランド 🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+  "USA": "アメリカ 🇺🇸",
+  "Paraguay": "パラグアイ 🇵🇾",
+  "Australia": "オーストラリア 🇦🇺",
+  "Türkiye": "トルコ 🇹🇷",
+  "UEFA Path C winner": "トルコ 🇹🇷",
+  "Germany": "ドイツ 🇩🇪",
+  "Curaçao": "キュラソー",
+  "Ivory Coast": "コートジボワール 🇨🇮",
+  "Ecuador": "エクアドル 🇪🇨",
+  "Netherlands": "オランダ 🇳🇱",
+  "Japan": "日本 🇯🇵",
+  "Sweden": "スウェーデン 🇸🇪",
+  "UEFA Path B winner": "スウェーデン 🇸🇪",
+  "Tunisia": "チュニジア 🇹🇳",
+  "Belgium": "ベルギー 🇧🇪",
+  "Egypt": "エジプト 🇪🇬",
+  "Iran": "イラン 🇮🇷",
+  "New Zealand": "ニュージーランド 🇳🇿",
+  "Spain": "スペイン 🇪🇸",
+  "Cape Verde": "カーボベルデ 🇨🇻",
+  "Saudi Arabia": "サウジアラビア 🇸🇦",
+  "Uruguay": "ウルグアイ 🇺🇾",
+  "France": "フランス 🇫🇷",
+  "Senegal": "セネガル 🇸🇳",
+  "Iraq": "イラク 🇮🇶",
+  "IC Path 2 winner": "イラク 🇮🇶",
+  "Norway": "ノルウェー 🇳🇴",
+  "Argentina": "アルゼンチン 🇦🇷",
+  "Algeria": "アルジェリア 🇩🇿",
+  "Austria": "オーストリア 🇦🇹",
+  "Jordan": "ヨルダン 🇯🇴",
+  "Portugal": "ポルトガル 🇵🇹",
+  "DR Congo": "コンゴ民主共和国 🇨🇩",
+  "IC Path 1 winner": "コンゴ民主共和国 🇨🇩",
+  "Uzbekistan": "ウズベキスタン 🇺🇿",
+  "Colombia": "コロンビア 🇨🇴",
+  "England": "イングランド 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+  "Croatia": "クロアチア 🇭🇷",
+  "Ghana": "ガーナ 🇬🇭",
+  "Panama": "パナマ 🇵🇦",
+};
+
+// ─── プレースホルダー → 正式チーム名への変換 ─────────────────
+const TEAM_ALIASES = {
+  "UEFA Path A winner": "Bosnia and Herzegovina",
+  "UEFA Path B winner": "Sweden",
+  "UEFA Path C winner": "Türkiye",
+  "UEFA Path D winner": "Czechia",
+  "IC Path 1 winner":   "DR Congo",
+  "IC Path 2 winner":   "Iraq",
+};
+function normTeam(name) {
+  return TEAM_ALIASES[name] || name;
+}
+
+// ─── 確定済みスコア（正式チーム名で管理）────────────────────
+// フォーマット: "YYYY-MM-DD|team1（正式名）|team2（正式名）" → [score1, score2]
+const KNOWN_SCORES = {
+  "2026-06-11|Mexico|South Africa": [2, 0],
+  "2026-06-11|South Korea|Czechia": [2, 1],
+};
+
+// ─── グループ定義（正式チーム名で統一）────────────────────
+const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+
+const GROUP_TEAMS = {
+  A: ["Mexico","South Africa","South Korea","Czechia"],
+  B: ["Canada","Bosnia and Herzegovina","Qatar","Switzerland"],
+  C: ["Brazil","Morocco","Haiti","Scotland"],
+  D: ["USA","Paraguay","Australia","Türkiye"],
+  E: ["Germany","Curaçao","Ivory Coast","Ecuador"],
+  F: ["Netherlands","Japan","Sweden","Tunisia"],
+  G: ["Belgium","Egypt","Iran","New Zealand"],
+  H: ["Spain","Cape Verde","Saudi Arabia","Uruguay"],
+  I: ["France","Senegal","Iraq","Norway"],
+  J: ["Argentina","Algeria","Austria","Jordan"],
+  K: ["Portugal","DR Congo","Uzbekistan","Colombia"],
+  L: ["England","Croatia","Ghana","Panama"],
+};
+
+// ─── ユーティリティ ──────────────────────────────────────
+function ja(name) {
+  // まずプレースホルダーを正式名に変換し、日本語名を返す
+  const canonical = normTeam(name);
+  return JA[canonical] || JA[name] || name;
+}
+
+// APIはチーム名を文字列でなくオブジェクト {name, code} で返すことがあるため吸収する
+function teamName(t) {
+  if (t == null) return '';
+  if (typeof t === 'string') return t;
+  return t.name || t.title || '';
+}
+
+// APIの試合データをアプリ内部の統一形式に変換する
+function normalizeMatch(m) {
+  // スコア: score1/score2 形式、score.ft 形式([2,0])のどちらにも対応
+  let apiScore = null;
+  if (typeof m.score1 === 'number' && typeof m.score2 === 'number') {
+    apiScore = [m.score1, m.score2];
+  } else if (m.score && Array.isArray(m.score.ft) && m.score.ft.length === 2) {
+    apiScore = m.score.ft;
+  }
+  // 会場: ground(文字列) / stadium.name / city のどれかを使う
+  let ground = '';
+  if (typeof m.ground === 'string') ground = m.ground;
+  else if (m.stadium) ground = (typeof m.stadium === 'string') ? m.stadium : (m.stadium.name || '');
+  if (m.city && ground && ground.indexOf(m.city) === -1) ground += '（' + m.city + '）';
+  else if (m.city && !ground) ground = m.city;
+
+  return {
+    round: m.round || '',
+    date: m.date || '',
+    time: m.time || '',
+    team1: teamName(m.team1),
+    team2: teamName(m.team2),
+    group: typeof m.group === 'string' ? m.group : '',
+    ground: ground,
+    apiScore: apiScore,
+  };
+}
+
+// 試合のスコアを取得（API由来のスコアを優先し、なければ内蔵データを検索）
+function getMatchScore(m) {
+  if (m.apiScore) return m.apiScore;
+  const key = `${m.date}|${normTeam(m.team1)}|${normTeam(m.team2)}`;
+  return KNOWN_SCORES[key] || null;
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+}
+
+// 「本日」を固定日付ではなく実際の日付で判定する
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function isToday(dateStr) {
+  return dateStr === todayStr();
+}
+
+function isPast(dateStr) {
+  return dateStr < todayStr();
+}
+
+// ─── 順位表計算 ──────────────────────────────────────────
+function calcStandings(groupLetter, matches) {
+  const teams = GROUP_TEAMS[groupLetter];
+  const stats = {};
+  teams.forEach(t => {
+    stats[t] = { played:0, won:0, drawn:0, lost:0, gf:0, ga:0, pts:0 };
+  });
+
+  matches.forEach(m => {
+    const score = getMatchScore(m);
+    if (!score) return;
+    const [s1, s2] = score;
+    // プレースホルダー名を正式名に変換してから集計
+    const t1 = normTeam(m.team1), t2 = normTeam(m.team2);
+    if (!stats[t1] || !stats[t2]) return;
+    stats[t1].played++; stats[t2].played++;
+    stats[t1].gf += s1; stats[t1].ga += s2;
+    stats[t2].gf += s2; stats[t2].ga += s1;
+    if (s1 > s2) { stats[t1].won++; stats[t1].pts+=3; stats[t2].lost++; }
+    else if (s1 < s2) { stats[t2].won++; stats[t2].pts+=3; stats[t1].lost++; }
+    else { stats[t1].drawn++; stats[t1].pts++; stats[t2].drawn++; stats[t2].pts++; }
+  });
+
+  return teams.map(t => ({
+    team: t,
+    ...stats[t],
+    gd: (stats[t]||{gf:0,ga:0}).gf - (stats[t]||{gf:0,ga:0}).ga
+  })).sort((a,b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
+}
+
+// ─── レンダリング ────────────────────────────────────────
+function renderAll(allMatches) {
+  // ── タブ生成（先頭に「まとめ」タブを置く）
+  const tabsEl = document.getElementById('tabs');
+  tabsEl.innerHTML =
+    `<button class="tab-btn active" onclick="switchGroup('SUMMARY')" id="tab-SUMMARY">📋 まとめ</button>` +
+    GROUPS.map(g =>
+      `<button class="tab-btn" onclick="switchGroup('${g}')" id="tab-${g}">グループ ${g}</button>`
+    ).join('');
+
+  // ── グループ別に分類
+  const byGroup = {};
+  GROUPS.forEach(g => byGroup[g] = []);
+  allMatches.forEach(m => {
+    if (m.group) {
+      const letter = m.group.replace('Group ','');
+      if (byGroup[letter]) byGroup[letter].push(m);
+    }
+  });
+
+  // ── HTML生成（まとめページ + 各グループページ）
+  const main = document.getElementById('main-content');
+  main.innerHTML =
+    renderSummary(byGroup) +
+    GROUPS.map(g => {
+      const matches = byGroup[g] || [];
+      const standings = calcStandings(g, matches);
+      return renderGroup(g, matches, standings, false);
+    }).join('');
+
+  // 再描画後も、直前まで見ていたタブを維持する（自動更新対策）
+  showGroup(document.getElementById('group-' + currentGroup) ? currentGroup : 'SUMMARY');
+}
+
+// ─── まとめページ（全12グループの順位を一覧表示）──────────
+function renderSummary(byGroup) {
+  const cards = GROUPS.map(g => {
+    const matches = byGroup[g] || [];
+    const standings = calcStandings(g, matches);
+    const playedTotal = matches.filter(m => getMatchScore(m)).length;
+    const rows = standings.map((s, i) => `
+      <div class="summary-row${i < 2 ? ' qualify' : ''}">
+        <span class="summary-rank">${i+1}</span>
+        <span class="summary-team">${ja(s.team)}</span>
+        <span class="summary-stat">${s.played}試合</span>
+        <span class="summary-stat">${s.gd > 0 ? '+' : ''}${s.gd}</span>
+        <span class="summary-pts">${s.pts}点</span>
+      </div>`).join('');
+    return `
+      <div class="summary-card" onclick="switchGroup('${g}')" title="グループ ${g} の詳細を見る">
+        <div class="summary-card-header">
+          <span>グループ ${g}</span>
+          <small>${playedTotal}/${matches.length} 試合消化</small>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+
+  return `
+  <div class="group-section active" id="group-SUMMARY">
+    <div class="group-title">
+      <div class="group-icon">📋</div>
+      <div>
+        <h2>全グループまとめ</h2>
+        <span>カードをクリックすると各グループの詳細に移動します</span>
+      </div>
+    </div>
+    <p class="summary-note"><span class="dot"></span> 緑色 = 決勝トーナメント進出圏（各組上位2チーム）</p>
+    <div class="summary-grid">${cards}</div>
+  </div>`;
+}
+
+function renderGroup(g, matches, standings, isActive) {
+  const matchesByDate = {};
+  matches.forEach(m => {
+    if (!matchesByDate[m.date]) matchesByDate[m.date] = [];
+    matchesByDate[m.date].push(m);
+  });
+
+  const datesHTML = Object.keys(matchesByDate).sort().map(date => {
+    const dayMatches = matchesByDate[date];
+    const label = formatDate(date);
+    const today = isToday(date);
+    const past = isPast(date);
+    return `
+      <div class="match-date-group">
+        <div class="match-date-label">${today ? '🔴 ' : ''}${label}${today ? '（本日）' : ''}</div>
+        ${dayMatches.map(m => renderMatchCard(m, today, past)).join('')}
+      </div>`;
+  }).join('');
+
+  return `
+  <div class="group-section${isActive ? ' active' : ''}" id="group-${g}">
+    <div class="group-title">
+      <div class="group-icon">${g}</div>
+      <div>
+        <h2>グループ ${g}</h2>
+        <span>${GROUP_TEAMS[g].map(t => JA[t]?.replace(/ [🏴🇦-🇿].*/u,'') || t).join(' · ')}</span>
+      </div>
+    </div>
+
+    <div class="standings">
+      <div class="standings-header">📊 グループ順位表</div>
+      <table class="standings-table">
+        <thead>
+          <tr>
+            <th style="width:40%">チーム</th>
+            <th>試合</th><th>勝</th><th>分</th><th>負</th>
+            <th>得点</th><th>失点</th><th>得失点差</th><th>勝点</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${standings.map((s, i) => {
+            const gd = s.gd;
+            const gdClass = gd > 0 ? 'gd-pos' : gd < 0 ? 'gd-neg' : '';
+            const qualify = i < 2 ? ' q' : '';
+            return `<tr>
+              <td><span class="team-rank${qualify}">${i+1}</span>${ja(s.team)}</td>
+              <td>${s.played}</td>
+              <td>${s.won}</td>
+              <td>${s.drawn}</td>
+              <td>${s.lost}</td>
+              <td>${s.gf}</td>
+              <td>${s.ga}</td>
+              <td class="${gdClass}">${gd > 0 ? '+' : ''}${gd}</td>
+              <td class="pts">${s.pts}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="matches-header">⚽ 試合日程・結果</div>
+    ${datesHTML}
+  </div>`;
+}
+
+function renderMatchCard(m, todayFlag, past) {
+  const score = getMatchScore(m);
+  const finished = !!score;
+  const cardClass = finished ? 'finished' : (todayFlag ? 'today' : 'upcoming');
+  const badge = finished
+    ? '<span class="status-badge done">試合終了</span>'
+    : todayFlag
+    ? '<span class="status-badge today">本日開催</span>'
+    : '<span class="status-badge upcoming">予定</span>';
+
+  let scoreHTML;
+  if (finished) {
+    scoreHTML = `<div class="score">${score[0]}<span class="score-sep">-</span>${score[1]}</div>`;
+  } else {
+    const timePart = m.time ? m.time.split(' ')[0] : '';
+    scoreHTML = `<div class="vs-text">vs</div><div class="match-time">${timePart}</div>`;
+  }
+
+  return `
+  <div class="match-card ${cardClass}">
+    <div class="match-inner">
+      <div class="team-side">
+        <div class="team-name">${ja(m.team1)}</div>
+      </div>
+      <div class="score-box">
+        ${scoreHTML}
+        ${badge}
+      </div>
+      <div class="team-side right">
+        <div class="team-name">${ja(m.team2)}</div>
+      </div>
+    </div>
+    <div class="match-venue">📍 ${m.ground || ''}</div>
+  </div>`;
+}
+
+let currentGroup = 'SUMMARY'; // いま表示中のタブ（自動更新時に維持するため）
+
+function showGroup(g) {
+  document.querySelectorAll('.group-section').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  const section = document.getElementById('group-' + g);
+  if (section) section.classList.add('active');
+  const tab = document.getElementById('tab-' + g);
+  if (tab) tab.classList.add('active');
+}
+
+function switchGroup(g) {
+  currentGroup = g;
+  showGroup(g);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── データ読み込み ─────────────────────────────────────
+function loadData() {
+  const statusEl = document.getElementById('fetch-status');
+  statusEl.textContent = '📡 最新データを取得中...';
+
+  fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json')
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      // APIデータを統一形式に変換し、不完全なデータは除外する
+      const groupMatches = (data.matches || [])
+        .map(normalizeMatch)
+        .filter(m => m.group && m.date && m.team1 && m.team2);
+      if (groupMatches.length === 0) throw new Error('グループステージのデータが空');
+      renderAll(groupMatches);
+      statusEl.textContent = '✅ データ取得完了（' + new Date().toLocaleTimeString('ja-JP') + '）';
+    })
+    .catch(err => {
+      statusEl.textContent = '⚠️ APIエラー — ローカルデータを使用中';
+      renderAll(FALLBACK_MATCHES.map(normalizeMatch));
+    });
+}
+
+// ─── フォールバック用 内蔵データ ────────────────────────────
+const FALLBACK_MATCHES = [
+  // Group A
+  {round:"Matchday 1",date:"2026-06-11",time:"13:00 UTC-6",team1:"Mexico",team2:"South Africa",group:"Group A",ground:"Mexico City"},
+  {round:"Matchday 1",date:"2026-06-11",time:"20:00 UTC-6",team1:"South Korea",team2:"UEFA Path D winner",group:"Group A",ground:"Guadalajara (Zapopan)"},
+  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-4",team1:"UEFA Path D winner",team2:"South Africa",group:"Group A",ground:"Atlanta"},
+  {round:"Matchday 8",date:"2026-06-18",time:"19:00 UTC-6",team1:"Mexico",team2:"South Korea",group:"Group A",ground:"Guadalajara (Zapopan)"},
+  {round:"Matchday 14",date:"2026-06-24",time:"19:00 UTC-6",team1:"UEFA Path D winner",team2:"Mexico",group:"Group A",ground:"Mexico City"},
+  {round:"Matchday 14",date:"2026-06-24",time:"19:00 UTC-6",team1:"South Africa",team2:"South Korea",group:"Group A",ground:"Monterrey"},
+  // Group B
+  {round:"Matchday 2",date:"2026-06-12",time:"15:00 UTC-4",team1:"Canada",team2:"UEFA Path A winner",group:"Group B",ground:"Toronto"},
+  {round:"Matchday 3",date:"2026-06-13",time:"12:00 UTC-7",team1:"Qatar",team2:"Switzerland",group:"Group B",ground:"San Francisco Bay Area (Santa Clara)"},
+  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-7",team1:"Switzerland",team2:"UEFA Path A winner",group:"Group B",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 8",date:"2026-06-18",time:"15:00 UTC-7",team1:"Canada",team2:"Qatar",group:"Group B",ground:"Vancouver"},
+  {round:"Matchday 14",date:"2026-06-24",time:"12:00 UTC-7",team1:"Switzerland",team2:"Canada",group:"Group B",ground:"Vancouver"},
+  {round:"Matchday 14",date:"2026-06-24",time:"12:00 UTC-7",team1:"UEFA Path A winner",team2:"Qatar",group:"Group B",ground:"Seattle"},
+  // Group C
+  {round:"Matchday 3",date:"2026-06-13",time:"18:00 UTC-4",team1:"Brazil",team2:"Morocco",group:"Group C",ground:"New York/New Jersey (East Rutherford)"},
+  {round:"Matchday 3",date:"2026-06-13",time:"21:00 UTC-4",team1:"Haiti",team2:"Scotland",group:"Group C",ground:"Boston (Foxborough)"},
+  {round:"Matchday 9",date:"2026-06-19",time:"18:00 UTC-4",team1:"Scotland",team2:"Morocco",group:"Group C",ground:"Boston (Foxborough)"},
+  {round:"Matchday 9",date:"2026-06-19",time:"21:00 UTC-4",team1:"Brazil",team2:"Haiti",group:"Group C",ground:"Philadelphia"},
+  {round:"Matchday 14",date:"2026-06-24",time:"18:00 UTC-4",team1:"Scotland",team2:"Brazil",group:"Group C",ground:"Miami (Miami Gardens)"},
+  {round:"Matchday 14",date:"2026-06-24",time:"18:00 UTC-4",team1:"Morocco",team2:"Haiti",group:"Group C",ground:"Atlanta"},
+  // Group D
+  {round:"Matchday 2",date:"2026-06-12",time:"18:00 UTC-7",team1:"USA",team2:"Paraguay",group:"Group D",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 3",date:"2026-06-13",time:"21:00 UTC-7",team1:"Australia",team2:"UEFA Path C winner",group:"Group D",ground:"Vancouver"},
+  {round:"Matchday 9",date:"2026-06-19",time:"12:00 UTC-7",team1:"USA",team2:"Australia",group:"Group D",ground:"Seattle"},
+  {round:"Matchday 9",date:"2026-06-19",time:"21:00 UTC-7",team1:"UEFA Path C winner",team2:"Paraguay",group:"Group D",ground:"San Francisco Bay Area (Santa Clara)"},
+  {round:"Matchday 15",date:"2026-06-25",time:"19:00 UTC-7",team1:"UEFA Path C winner",team2:"USA",group:"Group D",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 15",date:"2026-06-25",time:"19:00 UTC-7",team1:"Paraguay",team2:"Australia",group:"Group D",ground:"San Francisco Bay Area (Santa Clara)"},
+  // Group E
+  {round:"Matchday 4",date:"2026-06-14",time:"12:00 UTC-5",team1:"Germany",team2:"Curaçao",group:"Group E",ground:"Houston"},
+  {round:"Matchday 4",date:"2026-06-14",time:"19:00 UTC-4",team1:"Ivory Coast",team2:"Ecuador",group:"Group E",ground:"Philadelphia"},
+  {round:"Matchday 10",date:"2026-06-20",time:"16:00 UTC-4",team1:"Germany",team2:"Ivory Coast",group:"Group E",ground:"Toronto"},
+  {round:"Matchday 10",date:"2026-06-20",time:"19:00 UTC-5",team1:"Ecuador",team2:"Curaçao",group:"Group E",ground:"Kansas City"},
+  {round:"Matchday 15",date:"2026-06-25",time:"16:00 UTC-4",team1:"Curaçao",team2:"Ivory Coast",group:"Group E",ground:"Philadelphia"},
+  {round:"Matchday 15",date:"2026-06-25",time:"16:00 UTC-4",team1:"Ecuador",team2:"Germany",group:"Group E",ground:"New York/New Jersey (East Rutherford)"},
+  // Group F
+  {round:"Matchday 4",date:"2026-06-14",time:"15:00 UTC-5",team1:"Netherlands",team2:"Japan",group:"Group F",ground:"Dallas (Arlington)"},
+  {round:"Matchday 4",date:"2026-06-14",time:"20:00 UTC-6",team1:"UEFA Path B winner",team2:"Tunisia",group:"Group F",ground:"Monterrey (Guadalupe)"},
+  {round:"Matchday 10",date:"2026-06-20",time:"12:00 UTC-5",team1:"Netherlands",team2:"UEFA Path B winner",group:"Group F",ground:"Houston"},
+  {round:"Matchday 10",date:"2026-06-20",time:"22:00 UTC-6",team1:"Tunisia",team2:"Japan",group:"Group F",ground:"Monterrey (Guadalupe)"},
+  {round:"Matchday 15",date:"2026-06-25",time:"18:00 UTC-5",team1:"Japan",team2:"UEFA Path B winner",group:"Group F",ground:"Dallas (Arlington)"},
+  {round:"Matchday 15",date:"2026-06-25",time:"18:00 UTC-5",team1:"Tunisia",team2:"Netherlands",group:"Group F",ground:"Kansas City"},
+  // Group G
+  {round:"Matchday 5",date:"2026-06-15",time:"12:00 UTC-7",team1:"Belgium",team2:"Egypt",group:"Group G",ground:"Seattle"},
+  {round:"Matchday 5",date:"2026-06-15",time:"18:00 UTC-7",team1:"Iran",team2:"New Zealand",group:"Group G",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 11",date:"2026-06-21",time:"12:00 UTC-7",team1:"Belgium",team2:"Iran",group:"Group G",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 11",date:"2026-06-21",time:"18:00 UTC-7",team1:"New Zealand",team2:"Egypt",group:"Group G",ground:"Vancouver"},
+  {round:"Matchday 16",date:"2026-06-26",time:"20:00 UTC-7",team1:"Egypt",team2:"Iran",group:"Group G",ground:"Seattle"},
+  {round:"Matchday 16",date:"2026-06-26",time:"20:00 UTC-7",team1:"New Zealand",team2:"Belgium",group:"Group G",ground:"Vancouver"},
+  // Group H
+  {round:"Matchday 5",date:"2026-06-15",time:"12:00 UTC-4",team1:"Spain",team2:"Cape Verde",group:"Group H",ground:"Atlanta"},
+  {round:"Matchday 5",date:"2026-06-15",time:"18:00 UTC-4",team1:"Saudi Arabia",team2:"Uruguay",group:"Group H",ground:"Miami (Miami Gardens)"},
+  {round:"Matchday 11",date:"2026-06-21",time:"12:00 UTC-4",team1:"Spain",team2:"Saudi Arabia",group:"Group H",ground:"Atlanta"},
+  {round:"Matchday 11",date:"2026-06-21",time:"18:00 UTC-4",team1:"Uruguay",team2:"Cape Verde",group:"Group H",ground:"Miami (Miami Gardens)"},
+  {round:"Matchday 16",date:"2026-06-26",time:"19:00 UTC-5",team1:"Cape Verde",team2:"Saudi Arabia",group:"Group H",ground:"Houston"},
+  {round:"Matchday 16",date:"2026-06-26",time:"18:00 UTC-6",team1:"Uruguay",team2:"Spain",group:"Group H",ground:"Guadalajara (Zapopan)"},
+  // Group I
+  {round:"Matchday 6",date:"2026-06-16",time:"15:00 UTC-4",team1:"France",team2:"Senegal",group:"Group I",ground:"New York/New Jersey (East Rutherford)"},
+  {round:"Matchday 6",date:"2026-06-16",time:"18:00 UTC-4",team1:"IC Path 2 winner",team2:"Norway",group:"Group I",ground:"Boston (Foxborough)"},
+  {round:"Matchday 12",date:"2026-06-22",time:"17:00 UTC-4",team1:"France",team2:"IC Path 2 winner",group:"Group I",ground:"Philadelphia"},
+  {round:"Matchday 12",date:"2026-06-22",time:"20:00 UTC-4",team1:"Norway",team2:"Senegal",group:"Group I",ground:"New York/New Jersey (East Rutherford)"},
+  {round:"Matchday 16",date:"2026-06-26",time:"15:00 UTC-4",team1:"Norway",team2:"France",group:"Group I",ground:"Boston (Foxborough)"},
+  {round:"Matchday 16",date:"2026-06-26",time:"15:00 UTC-4",team1:"Senegal",team2:"IC Path 2 winner",group:"Group I",ground:"Toronto"},
+  // Group J
+  {round:"Matchday 6",date:"2026-06-16",time:"20:00 UTC-5",team1:"Argentina",team2:"Algeria",group:"Group J",ground:"Kansas City"},
+  {round:"Matchday 6",date:"2026-06-16",time:"21:00 UTC-7",team1:"Austria",team2:"Jordan",group:"Group J",ground:"San Francisco Bay Area (Santa Clara)"},
+  {round:"Matchday 12",date:"2026-06-22",time:"12:00 UTC-5",team1:"Argentina",team2:"Austria",group:"Group J",ground:"Dallas (Arlington)"},
+  {round:"Matchday 12",date:"2026-06-22",time:"20:00 UTC-7",team1:"Jordan",team2:"Algeria",group:"Group J",ground:"San Francisco Bay Area (Santa Clara)"},
+  {round:"Matchday 17",date:"2026-06-27",time:"21:00 UTC-5",team1:"Algeria",team2:"Austria",group:"Group J",ground:"Kansas City"},
+  {round:"Matchday 17",date:"2026-06-27",time:"21:00 UTC-5",team1:"Jordan",team2:"Argentina",group:"Group J",ground:"Dallas (Arlington)"},
+  // Group K
+  {round:"Matchday 7",date:"2026-06-17",time:"12:00 UTC-5",team1:"Portugal",team2:"IC Path 1 winner",group:"Group K",ground:"Houston"},
+  {round:"Matchday 7",date:"2026-06-17",time:"20:00 UTC-6",team1:"Uzbekistan",team2:"Colombia",group:"Group K",ground:"Mexico City"},
+  {round:"Matchday 13",date:"2026-06-23",time:"12:00 UTC-5",team1:"Portugal",team2:"Uzbekistan",group:"Group K",ground:"Houston"},
+  {round:"Matchday 13",date:"2026-06-23",time:"20:00 UTC-6",team1:"Colombia",team2:"IC Path 1 winner",group:"Group K",ground:"Guadalajara (Zapopan)"},
+  {round:"Matchday 17",date:"2026-06-27",time:"19:30 UTC-4",team1:"Colombia",team2:"Portugal",group:"Group K",ground:"Miami (Miami Gardens)"},
+  {round:"Matchday 17",date:"2026-06-27",time:"19:30 UTC-4",team1:"IC Path 1 winner",team2:"Uzbekistan",group:"Group K",ground:"Atlanta"},
+  // Group L
+  {round:"Matchday 7",date:"2026-06-17",time:"15:00 UTC-5",team1:"England",team2:"Croatia",group:"Group L",ground:"Dallas (Arlington)"},
+  {round:"Matchday 7",date:"2026-06-17",time:"19:00 UTC-4",team1:"Ghana",team2:"Panama",group:"Group L",ground:"Toronto"},
+  {round:"Matchday 13",date:"2026-06-23",time:"16:00 UTC-4",team1:"England",team2:"Ghana",group:"Group L",ground:"Boston (Foxborough)"},
+  {round:"Matchday 13",date:"2026-06-23",time:"19:00 UTC-4",team1:"Panama",team2:"Croatia",group:"Group L",ground:"Toronto"},
+  {round:"Matchday 17",date:"2026-06-27",time:"17:00 UTC-4",team1:"Panama",team2:"England",group:"Group L",ground:"New York/New Jersey (East Rutherford)"},
+  {round:"Matchday 17",date:"2026-06-27",time:"17:00 UTC-4",team1:"Croatia",team2:"Ghana",group:"Group L",ground:"Philadelphia"},
+];
+
+// ─── 起動 ────────────────────────────────────────────────
+loadData();
+
+// ─── 自動更新（5分ごとに最新データを再取得）────────────────
+const AUTO_REFRESH_MINUTES = 5;
+setInterval(loadData, AUTO_REFRESH_MINUTES * 60 * 1000);
+</script>
+</body>
+</html>
