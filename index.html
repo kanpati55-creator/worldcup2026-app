@@ -433,8 +433,8 @@
 </main>
 
 <footer>
-  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> ｜ 更新: 2026年6月12日
-  <br>スコアは既知の結果を反映しています
+  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> + ESPN ｜ 更新: 2026年6月13日
+  <br>スコアは取得時点の確定結果を反映しています
 </footer>
 
 <script>
@@ -506,8 +506,25 @@ const TEAM_ALIASES = {
   "IC Path 1 winner":   "DR Congo",
   "IC Path 2 winner":   "Iraq",
 };
+// 別表記（ESPNなど他データ源のチーム名）→ 正式チーム名
+const NAME_FIXES = {
+  "United States": "USA",
+  "Bosnia-Herzegovina": "Bosnia and Herzegovina",
+  "Czech Republic": "Czechia",
+  "Turkey": "Türkiye",
+  "Turkiye": "Türkiye",
+  "Côte d'Ivoire": "Ivory Coast",
+  "Cote d'Ivoire": "Ivory Coast",
+  "Cabo Verde": "Cape Verde",
+  "Curacao": "Curaçao",
+  "Korea Republic": "South Korea",
+  "IR Iran": "Iran",
+  "Democratic Republic of the Congo": "DR Congo",
+  "Congo DR": "DR Congo",
+};
 function normTeam(name) {
-  return TEAM_ALIASES[name] || name;
+  const n = TEAM_ALIASES[name] || name;
+  return NAME_FIXES[n] || n;
 }
 
 // ─── 確定済みスコア（正式チーム名で管理）────────────────────
@@ -515,7 +532,38 @@ function normTeam(name) {
 const KNOWN_SCORES = {
   "2026-06-11|Mexico|South Africa": [2, 0],
   "2026-06-11|South Korea|Czechia": [2, 1],
+  "2026-06-12|Canada|Bosnia and Herzegovina": [1, 1],
+  "2026-06-12|USA|Paraguay": [2, 0],
 };
+
+// ─── ESPNから取得した確定スコア（チームペア → スコア）────────
+let LIVE_SCORES = {};
+function pairKey(a, b) {
+  return [a, b].sort().join('|');
+}
+
+// ESPNスコアボードのJSONから「試合終了」のスコアだけを取り出す
+function parseEspnScores(data) {
+  const map = {};
+  let count = 0;
+  (data.events || []).forEach(ev => {
+    const comp = (ev.competitions || [])[0];
+    if (!comp) return;
+    const done = ev.status && ev.status.type && ev.status.type.completed;
+    if (!done) return;
+    const cs = comp.competitors || [];
+    if (cs.length !== 2) return;
+    const a = normTeam((cs[0].team && (cs[0].team.displayName || cs[0].team.name)) || '');
+    const b = normTeam((cs[1].team && (cs[1].team.displayName || cs[1].team.name)) || '');
+    const sa = Number(cs[0].score), sb = Number(cs[1].score);
+    if (!a || !b || isNaN(sa) || isNaN(sb)) return;
+    const e = {};
+    e[a] = sa; e[b] = sb;
+    map[pairKey(a, b)] = e;
+    count++;
+  });
+  return { map: map, count: count };
+}
 
 // ─── グループ定義（正式チーム名で統一）────────────────────
 const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L'];
@@ -577,10 +625,13 @@ function normalizeMatch(m) {
   };
 }
 
-// 試合のスコアを取得（API由来のスコアを優先し、なければ内蔵データを検索）
+// 試合のスコアを取得（優先順: 日程API → ESPN → 内蔵データ）
 function getMatchScore(m) {
   if (m.apiScore) return m.apiScore;
-  const key = `${m.date}|${normTeam(m.team1)}|${normTeam(m.team2)}`;
+  const a = normTeam(m.team1), b = normTeam(m.team2);
+  const live = LIVE_SCORES[pairKey(a, b)];
+  if (live && a in live && b in live) return [live[a], live[b]];
+  const key = `${m.date}|${a}|${b}`;
   return KNOWN_SCORES[key] || null;
 }
 
@@ -826,28 +877,46 @@ function switchGroup(g) {
 }
 
 // ─── データ読み込み ─────────────────────────────────────
+// 日程: openfootball ／ スコア: ESPN の2系統から取得して合成する
+const SCHEDULE_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+const SCORES_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260627&limit=300';
+
 function loadData() {
   const statusEl = document.getElementById('fetch-status');
   statusEl.textContent = '📡 最新データを取得中...';
 
-  fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json')
-    .then(r => {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
+  const scheduleP = fetch(SCHEDULE_URL)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
-      // APIデータを統一形式に変換し、不完全なデータは除外する
-      const groupMatches = (data.matches || [])
+      const ms = (data.matches || [])
         .map(normalizeMatch)
         .filter(m => m.group && m.date && m.team1 && m.team2);
-      if (groupMatches.length === 0) throw new Error('グループステージのデータが空');
-      renderAll(groupMatches);
-      statusEl.textContent = '✅ データ取得完了（' + new Date().toLocaleTimeString('ja-JP') + '）';
-    })
-    .catch(err => {
-      statusEl.textContent = '⚠️ APIエラー — ローカルデータを使用中';
-      renderAll(FALLBACK_MATCHES.map(normalizeMatch));
+      if (ms.length === 0) throw new Error('グループステージのデータが空');
+      return ms;
     });
+
+  const scoresP = fetch(SCORES_URL)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(parseEspnScores);
+
+  Promise.allSettled([scheduleP, scoresP]).then(results => {
+    const sched = results[0], scores = results[1];
+    let scoreCount = 0;
+    if (scores.status === 'fulfilled') {
+      LIVE_SCORES = scores.value.map;
+      scoreCount = scores.value.count;
+    }
+    const matches = (sched.status === 'fulfilled')
+      ? sched.value
+      : FALLBACK_MATCHES.map(normalizeMatch);
+    renderAll(matches);
+    const time = new Date().toLocaleTimeString('ja-JP');
+    if (sched.status === 'fulfilled') {
+      statusEl.textContent = '✅ データ取得完了（試合結果 ' + scoreCount + '件 自動反映 ｜ ' + time + '）';
+    } else {
+      statusEl.textContent = '⚠️ 日程APIエラー — 内蔵データを使用中（' + time + '）';
+    }
+  });
 }
 
 // ─── フォールバック用 内蔵データ ────────────────────────────
