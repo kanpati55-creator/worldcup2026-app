@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- ─── キャッシュ無効化（iOS Safariの古いバージョン表示を防止）─── -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>FIFA ワールドカップ 2026 - 試合結果</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2214%22 font-size=%2214%22>⚽</text></svg>">
@@ -331,6 +335,16 @@
       margin-top: 32px;
     }
     footer a { color: var(--primary); }
+    .version-badge {
+      display: inline-block;
+      background: var(--primary);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 0.78em;
+      font-weight: bold;
+      margin-top: 6px;
+    }
 
     /* ─── まとめページ ─── */
     .summary-grid {
@@ -433,11 +447,17 @@
 </main>
 
 <footer>
-  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> + ESPN ｜ 更新: 2026年6月13日
+  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> + ESPN
   <br>スコアは取得時点の確定結果を反映しています
+  <br><span class="version-badge">v1.4 (2026-06-17)</span>
 </footer>
 
 <script>
+// ═══════════════════════════════════════════════════════════
+// FIFA W杯 2026 試合結果アプリ  v1.4 (2026-06-17)
+// 修正点: 順位表集計の堅牢化 + キャッシュ無効化 + 名前正規化拡張
+// ═══════════════════════════════════════════════════════════
+
 // ─── チーム名マッピング（英語→日本語）─────────────────────
 const JA = {
   "Mexico": "メキシコ 🇲🇽",
@@ -512,6 +532,7 @@ const NAME_FIXES = {
   "Bosnia-Herzegovina": "Bosnia and Herzegovina",
   "Bosnia & Herzegovina": "Bosnia and Herzegovina",
   "Czech Republic": "Czechia",
+  "Czechoslovakia": "Czechia",
   "Turkey": "Türkiye",
   "Turkiye": "Türkiye",
   "Côte d'Ivoire": "Ivory Coast",
@@ -519,12 +540,18 @@ const NAME_FIXES = {
   "Cabo Verde": "Cape Verde",
   "Curacao": "Curaçao",
   "Korea Republic": "South Korea",
+  "Korea, South": "South Korea",
+  "Republic of Korea": "South Korea",
   "IR Iran": "Iran",
+  "Islamic Republic of Iran": "Iran",
   "Democratic Republic of the Congo": "DR Congo",
   "Congo DR": "DR Congo",
+  "DR of the Congo": "DR Congo",
 };
 function normTeam(name) {
-  const n = TEAM_ALIASES[name] || name;
+  if (!name) return '';
+  const trimmed = String(name).trim();
+  const n = TEAM_ALIASES[trimmed] || trimmed;
   return NAME_FIXES[n] || n;
 }
 
@@ -534,7 +561,7 @@ const KNOWN_SCORES = {
   "2026-06-11|Mexico|South Africa": [2, 0],
   "2026-06-11|South Korea|Czechia": [2, 1],
   "2026-06-12|Canada|Bosnia and Herzegovina": [1, 1],
-  "2026-06-12|USA|Paraguay": [2, 0],
+  "2026-06-12|USA|Paraguay": [4, 1],
 };
 
 // ─── ESPNから取得した確定スコア（チームペア → スコア）────────
@@ -633,7 +660,12 @@ function getMatchScore(m) {
   const live = LIVE_SCORES[pairKey(a, b)];
   if (live && a in live && b in live) return [live[a], live[b]];
   const key = `${m.date}|${a}|${b}`;
-  return KNOWN_SCORES[key] || null;
+  if (KNOWN_SCORES[key]) return KNOWN_SCORES[key];
+  // 念のため逆順でもチェック（KNOWN_SCORESに登録された順と試合のteam順が違う場合）
+  const keyRev = `${m.date}|${b}|${a}`;
+  const rev = KNOWN_SCORES[keyRev];
+  if (rev) return [rev[1], rev[0]];
+  return null;
 }
 
 function formatDate(dateStr) {
@@ -642,21 +674,19 @@ function formatDate(dateStr) {
 }
 
 // ─── 現地時間 → 日本時間(JST)への変換 ─────────────────────
-// 例: date="2026-06-13", time="21:00 UTC-7" → 日本時間 6/14(日) 13:00
 const WEEKDAYS_JA = ['日','月','火','水','木','金','土'];
 function toJST(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
   const m = timeStr.match(/(\d{1,2}):(\d{2})\s*UTC([+-]\d{1,2}(?::\d{2})?)?/);
   if (!m) return null;
   const h = Number(m[1]), min = Number(m[2]);
-  let offset = 0; // 現地のUTCオフセット(時間)
+  let offset = 0;
   if (m[3]) {
     const om = m[3].match(/([+-])(\d{1,2})(?::(\d{2}))?/);
     offset = (om[1] === '-' ? -1 : 1) * (Number(om[2]) + (om[3] ? Number(om[3]) / 60 : 0));
   }
   const p = dateStr.split('-').map(Number);
   if (p.length !== 3) return null;
-  // 現地時刻 → UTC → +9時間でJST
   const utcMs = Date.UTC(p[0], p[1] - 1, p[2], h, min) - offset * 3600 * 1000;
   const jst = new Date(utcMs + 9 * 3600 * 1000);
   return {
@@ -674,7 +704,6 @@ function jstLabel(dateStr, timeStr) {
   return `日本時間 ${j.month}/${j.day}(${j.weekday}) ${j.hour}:${mm}`;
 }
 
-// 「本日」を固定日付ではなく実際の日付で判定する
 function todayStr() {
   const d = new Date();
   return d.getFullYear() + '-' +
@@ -690,7 +719,7 @@ function isPast(dateStr) {
   return dateStr < todayStr();
 }
 
-// ─── 順位表計算 ──────────────────────────────────────────
+// ─── 順位表計算（堅牢化：未知チームでも警告して継続）─────────
 function calcStandings(groupLetter, matches) {
   const teams = GROUP_TEAMS[groupLetter];
   const stats = {};
@@ -704,7 +733,13 @@ function calcStandings(groupLetter, matches) {
     const [s1, s2] = score;
     // プレースホルダー名を正式名に変換してから集計
     const t1 = normTeam(m.team1), t2 = normTeam(m.team2);
-    if (!stats[t1] || !stats[t2]) return;
+    if (!stats[t1] || !stats[t2]) {
+      // デバッグ用警告（コンソールに出力）— 集計対象外のチームを検出
+      console.warn('[順位表] 未登録チーム — group=' + groupLetter +
+        ', team1=' + m.team1 + '→' + t1 + ', team2=' + m.team2 + '→' + t2 +
+        ', 既知チーム=' + teams.join(','));
+      return;
+    }
     stats[t1].played++; stats[t2].played++;
     stats[t1].gf += s1; stats[t1].ga += s2;
     stats[t2].gf += s2; stats[t2].ga += s1;
@@ -722,7 +757,6 @@ function calcStandings(groupLetter, matches) {
 
 // ─── レンダリング ────────────────────────────────────────
 function renderAll(allMatches) {
-  // ── タブ生成（先頭に「まとめ」タブを置く）
   const tabsEl = document.getElementById('tabs');
   tabsEl.innerHTML =
     `<button class="tab-btn active" onclick="switchGroup('SUMMARY')" id="tab-SUMMARY">📋 まとめ</button>` +
@@ -730,7 +764,6 @@ function renderAll(allMatches) {
       `<button class="tab-btn" onclick="switchGroup('${g}')" id="tab-${g}">グループ ${g}</button>`
     ).join('');
 
-  // ── グループ別に分類
   const byGroup = {};
   GROUPS.forEach(g => byGroup[g] = []);
   allMatches.forEach(m => {
@@ -740,7 +773,6 @@ function renderAll(allMatches) {
     }
   });
 
-  // ── HTML生成（まとめページ + 各グループページ）
   const main = document.getElementById('main-content');
   main.innerHTML =
     renderSummary(byGroup) +
@@ -750,11 +782,9 @@ function renderAll(allMatches) {
       return renderGroup(g, matches, standings, false);
     }).join('');
 
-  // 再描画後も、直前まで見ていたタブを維持する（自動更新対策）
   showGroup(document.getElementById('group-' + currentGroup) ? currentGroup : 'SUMMARY');
 }
 
-// ─── まとめページ（全12グループの順位を一覧表示）──────────
 function renderSummary(byGroup) {
   const cards = GROUPS.map(g => {
     const matches = byGroup[g] || [];
@@ -871,7 +901,6 @@ function renderMatchCard(m, todayFlag, past) {
   if (finished) {
     scoreHTML = `<div class="score">${score[0]}<span class="score-sep">-</span>${score[1]}</div>`;
   } else {
-    // 日本時間で表示し、現地時間は小さく添える
     const jst = jstLabel(m.date, m.time);
     const localPart = m.time ? m.time.split(' ')[0] : '';
     const timeHTML = jst
@@ -898,7 +927,7 @@ function renderMatchCard(m, todayFlag, past) {
   </div>`;
 }
 
-let currentGroup = 'SUMMARY'; // いま表示中のタブ（自動更新時に維持するため）
+let currentGroup = 'SUMMARY';
 
 function showGroup(g) {
   document.querySelectorAll('.group-section').forEach(el => el.classList.remove('active'));
@@ -916,15 +945,21 @@ function switchGroup(g) {
 }
 
 // ─── データ読み込み ─────────────────────────────────────
-// 日程: openfootball ／ スコア: ESPN の2系統から取得して合成する
-const SCHEDULE_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
-const SCORES_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260627&limit=300';
+// キャッシュ無効化のためURLにタイムスタンプを付与
+const SCHEDULE_BASE = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+const SCORES_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260627&limit=300';
 
 function loadData() {
   const statusEl = document.getElementById('fetch-status');
   statusEl.textContent = '📡 最新データを取得中...';
 
-  const scheduleP = fetch(SCHEDULE_URL)
+  const cacheBust = '_t=' + Date.now();
+  const scheduleUrl = SCHEDULE_BASE + '?' + cacheBust;
+  const scoresUrl = SCORES_BASE + '&' + cacheBust;
+
+  const fetchOpts = { cache: 'no-store' };
+
+  const scheduleP = fetch(scheduleUrl, fetchOpts)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       const ms = (data.matches || [])
@@ -934,7 +969,7 @@ function loadData() {
       return ms;
     });
 
-  const scoresP = fetch(SCORES_URL)
+  const scoresP = fetch(scoresUrl, fetchOpts)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(parseEspnScores);
 
@@ -962,18 +997,18 @@ function loadData() {
 const FALLBACK_MATCHES = [
   // Group A
   {round:"Matchday 1",date:"2026-06-11",time:"13:00 UTC-6",team1:"Mexico",team2:"South Africa",group:"Group A",ground:"Mexico City"},
-  {round:"Matchday 1",date:"2026-06-11",time:"20:00 UTC-6",team1:"South Korea",team2:"UEFA Path D winner",group:"Group A",ground:"Guadalajara (Zapopan)"},
-  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-4",team1:"UEFA Path D winner",team2:"South Africa",group:"Group A",ground:"Atlanta"},
+  {round:"Matchday 1",date:"2026-06-11",time:"20:00 UTC-6",team1:"South Korea",team2:"Czechia",group:"Group A",ground:"Guadalajara (Zapopan)"},
+  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-4",team1:"Czechia",team2:"South Africa",group:"Group A",ground:"Atlanta"},
   {round:"Matchday 8",date:"2026-06-18",time:"19:00 UTC-6",team1:"Mexico",team2:"South Korea",group:"Group A",ground:"Guadalajara (Zapopan)"},
-  {round:"Matchday 14",date:"2026-06-24",time:"19:00 UTC-6",team1:"UEFA Path D winner",team2:"Mexico",group:"Group A",ground:"Mexico City"},
+  {round:"Matchday 14",date:"2026-06-24",time:"19:00 UTC-6",team1:"Czechia",team2:"Mexico",group:"Group A",ground:"Mexico City"},
   {round:"Matchday 14",date:"2026-06-24",time:"19:00 UTC-6",team1:"South Africa",team2:"South Korea",group:"Group A",ground:"Monterrey"},
   // Group B
-  {round:"Matchday 2",date:"2026-06-12",time:"15:00 UTC-4",team1:"Canada",team2:"UEFA Path A winner",group:"Group B",ground:"Toronto"},
+  {round:"Matchday 2",date:"2026-06-12",time:"15:00 UTC-4",team1:"Canada",team2:"Bosnia and Herzegovina",group:"Group B",ground:"Toronto"},
   {round:"Matchday 3",date:"2026-06-13",time:"12:00 UTC-7",team1:"Qatar",team2:"Switzerland",group:"Group B",ground:"San Francisco Bay Area (Santa Clara)"},
-  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-7",team1:"Switzerland",team2:"UEFA Path A winner",group:"Group B",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 8",date:"2026-06-18",time:"12:00 UTC-7",team1:"Switzerland",team2:"Bosnia and Herzegovina",group:"Group B",ground:"Los Angeles (Inglewood)"},
   {round:"Matchday 8",date:"2026-06-18",time:"15:00 UTC-7",team1:"Canada",team2:"Qatar",group:"Group B",ground:"Vancouver"},
   {round:"Matchday 14",date:"2026-06-24",time:"12:00 UTC-7",team1:"Switzerland",team2:"Canada",group:"Group B",ground:"Vancouver"},
-  {round:"Matchday 14",date:"2026-06-24",time:"12:00 UTC-7",team1:"UEFA Path A winner",team2:"Qatar",group:"Group B",ground:"Seattle"},
+  {round:"Matchday 14",date:"2026-06-24",time:"12:00 UTC-7",team1:"Bosnia and Herzegovina",team2:"Qatar",group:"Group B",ground:"Seattle"},
   // Group C
   {round:"Matchday 3",date:"2026-06-13",time:"18:00 UTC-4",team1:"Brazil",team2:"Morocco",group:"Group C",ground:"New York/New Jersey (East Rutherford)"},
   {round:"Matchday 3",date:"2026-06-13",time:"21:00 UTC-4",team1:"Haiti",team2:"Scotland",group:"Group C",ground:"Boston (Foxborough)"},
@@ -983,67 +1018,11 @@ const FALLBACK_MATCHES = [
   {round:"Matchday 14",date:"2026-06-24",time:"18:00 UTC-4",team1:"Morocco",team2:"Haiti",group:"Group C",ground:"Atlanta"},
   // Group D
   {round:"Matchday 2",date:"2026-06-12",time:"18:00 UTC-7",team1:"USA",team2:"Paraguay",group:"Group D",ground:"Los Angeles (Inglewood)"},
-  {round:"Matchday 3",date:"2026-06-13",time:"21:00 UTC-7",team1:"Australia",team2:"UEFA Path C winner",group:"Group D",ground:"Vancouver"},
+  {round:"Matchday 3",date:"2026-06-13",time:"21:00 UTC-7",team1:"Australia",team2:"Türkiye",group:"Group D",ground:"Vancouver"},
   {round:"Matchday 9",date:"2026-06-19",time:"12:00 UTC-7",team1:"USA",team2:"Australia",group:"Group D",ground:"Seattle"},
-  {round:"Matchday 9",date:"2026-06-19",time:"21:00 UTC-7",team1:"UEFA Path C winner",team2:"Paraguay",group:"Group D",ground:"San Francisco Bay Area (Santa Clara)"},
-  {round:"Matchday 15",date:"2026-06-25",time:"19:00 UTC-7",team1:"UEFA Path C winner",team2:"USA",group:"Group D",ground:"Los Angeles (Inglewood)"},
+  {round:"Matchday 9",date:"2026-06-19",time:"21:00 UTC-7",team1:"Türkiye",team2:"Paraguay",group:"Group D",ground:"San Francisco Bay Area (Santa Clara)"},
+  {round:"Matchday 15",date:"2026-06-25",time:"19:00 UTC-7",team1:"Türkiye",team2:"USA",group:"Group D",ground:"Los Angeles (Inglewood)"},
   {round:"Matchday 15",date:"2026-06-25",time:"19:00 UTC-7",team1:"Paraguay",team2:"Australia",group:"Group D",ground:"San Francisco Bay Area (Santa Clara)"},
-  // Group E
-  {round:"Matchday 4",date:"2026-06-14",time:"12:00 UTC-5",team1:"Germany",team2:"Curaçao",group:"Group E",ground:"Houston"},
-  {round:"Matchday 4",date:"2026-06-14",time:"19:00 UTC-4",team1:"Ivory Coast",team2:"Ecuador",group:"Group E",ground:"Philadelphia"},
-  {round:"Matchday 10",date:"2026-06-20",time:"16:00 UTC-4",team1:"Germany",team2:"Ivory Coast",group:"Group E",ground:"Toronto"},
-  {round:"Matchday 10",date:"2026-06-20",time:"19:00 UTC-5",team1:"Ecuador",team2:"Curaçao",group:"Group E",ground:"Kansas City"},
-  {round:"Matchday 15",date:"2026-06-25",time:"16:00 UTC-4",team1:"Curaçao",team2:"Ivory Coast",group:"Group E",ground:"Philadelphia"},
-  {round:"Matchday 15",date:"2026-06-25",time:"16:00 UTC-4",team1:"Ecuador",team2:"Germany",group:"Group E",ground:"New York/New Jersey (East Rutherford)"},
-  // Group F
-  {round:"Matchday 4",date:"2026-06-14",time:"15:00 UTC-5",team1:"Netherlands",team2:"Japan",group:"Group F",ground:"Dallas (Arlington)"},
-  {round:"Matchday 4",date:"2026-06-14",time:"20:00 UTC-6",team1:"UEFA Path B winner",team2:"Tunisia",group:"Group F",ground:"Monterrey (Guadalupe)"},
-  {round:"Matchday 10",date:"2026-06-20",time:"12:00 UTC-5",team1:"Netherlands",team2:"UEFA Path B winner",group:"Group F",ground:"Houston"},
-  {round:"Matchday 10",date:"2026-06-20",time:"22:00 UTC-6",team1:"Tunisia",team2:"Japan",group:"Group F",ground:"Monterrey (Guadalupe)"},
-  {round:"Matchday 15",date:"2026-06-25",time:"18:00 UTC-5",team1:"Japan",team2:"UEFA Path B winner",group:"Group F",ground:"Dallas (Arlington)"},
-  {round:"Matchday 15",date:"2026-06-25",time:"18:00 UTC-5",team1:"Tunisia",team2:"Netherlands",group:"Group F",ground:"Kansas City"},
-  // Group G
-  {round:"Matchday 5",date:"2026-06-15",time:"12:00 UTC-7",team1:"Belgium",team2:"Egypt",group:"Group G",ground:"Seattle"},
-  {round:"Matchday 5",date:"2026-06-15",time:"18:00 UTC-7",team1:"Iran",team2:"New Zealand",group:"Group G",ground:"Los Angeles (Inglewood)"},
-  {round:"Matchday 11",date:"2026-06-21",time:"12:00 UTC-7",team1:"Belgium",team2:"Iran",group:"Group G",ground:"Los Angeles (Inglewood)"},
-  {round:"Matchday 11",date:"2026-06-21",time:"18:00 UTC-7",team1:"New Zealand",team2:"Egypt",group:"Group G",ground:"Vancouver"},
-  {round:"Matchday 16",date:"2026-06-26",time:"20:00 UTC-7",team1:"Egypt",team2:"Iran",group:"Group G",ground:"Seattle"},
-  {round:"Matchday 16",date:"2026-06-26",time:"20:00 UTC-7",team1:"New Zealand",team2:"Belgium",group:"Group G",ground:"Vancouver"},
-  // Group H
-  {round:"Matchday 5",date:"2026-06-15",time:"12:00 UTC-4",team1:"Spain",team2:"Cape Verde",group:"Group H",ground:"Atlanta"},
-  {round:"Matchday 5",date:"2026-06-15",time:"18:00 UTC-4",team1:"Saudi Arabia",team2:"Uruguay",group:"Group H",ground:"Miami (Miami Gardens)"},
-  {round:"Matchday 11",date:"2026-06-21",time:"12:00 UTC-4",team1:"Spain",team2:"Saudi Arabia",group:"Group H",ground:"Atlanta"},
-  {round:"Matchday 11",date:"2026-06-21",time:"18:00 UTC-4",team1:"Uruguay",team2:"Cape Verde",group:"Group H",ground:"Miami (Miami Gardens)"},
-  {round:"Matchday 16",date:"2026-06-26",time:"19:00 UTC-5",team1:"Cape Verde",team2:"Saudi Arabia",group:"Group H",ground:"Houston"},
-  {round:"Matchday 16",date:"2026-06-26",time:"18:00 UTC-6",team1:"Uruguay",team2:"Spain",group:"Group H",ground:"Guadalajara (Zapopan)"},
-  // Group I
-  {round:"Matchday 6",date:"2026-06-16",time:"15:00 UTC-4",team1:"France",team2:"Senegal",group:"Group I",ground:"New York/New Jersey (East Rutherford)"},
-  {round:"Matchday 6",date:"2026-06-16",time:"18:00 UTC-4",team1:"IC Path 2 winner",team2:"Norway",group:"Group I",ground:"Boston (Foxborough)"},
-  {round:"Matchday 12",date:"2026-06-22",time:"17:00 UTC-4",team1:"France",team2:"IC Path 2 winner",group:"Group I",ground:"Philadelphia"},
-  {round:"Matchday 12",date:"2026-06-22",time:"20:00 UTC-4",team1:"Norway",team2:"Senegal",group:"Group I",ground:"New York/New Jersey (East Rutherford)"},
-  {round:"Matchday 16",date:"2026-06-26",time:"15:00 UTC-4",team1:"Norway",team2:"France",group:"Group I",ground:"Boston (Foxborough)"},
-  {round:"Matchday 16",date:"2026-06-26",time:"15:00 UTC-4",team1:"Senegal",team2:"IC Path 2 winner",group:"Group I",ground:"Toronto"},
-  // Group J
-  {round:"Matchday 6",date:"2026-06-16",time:"20:00 UTC-5",team1:"Argentina",team2:"Algeria",group:"Group J",ground:"Kansas City"},
-  {round:"Matchday 6",date:"2026-06-16",time:"21:00 UTC-7",team1:"Austria",team2:"Jordan",group:"Group J",ground:"San Francisco Bay Area (Santa Clara)"},
-  {round:"Matchday 12",date:"2026-06-22",time:"12:00 UTC-5",team1:"Argentina",team2:"Austria",group:"Group J",ground:"Dallas (Arlington)"},
-  {round:"Matchday 12",date:"2026-06-22",time:"20:00 UTC-7",team1:"Jordan",team2:"Algeria",group:"Group J",ground:"San Francisco Bay Area (Santa Clara)"},
-  {round:"Matchday 17",date:"2026-06-27",time:"21:00 UTC-5",team1:"Algeria",team2:"Austria",group:"Group J",ground:"Kansas City"},
-  {round:"Matchday 17",date:"2026-06-27",time:"21:00 UTC-5",team1:"Jordan",team2:"Argentina",group:"Group J",ground:"Dallas (Arlington)"},
-  // Group K
-  {round:"Matchday 7",date:"2026-06-17",time:"12:00 UTC-5",team1:"Portugal",team2:"IC Path 1 winner",group:"Group K",ground:"Houston"},
-  {round:"Matchday 7",date:"2026-06-17",time:"20:00 UTC-6",team1:"Uzbekistan",team2:"Colombia",group:"Group K",ground:"Mexico City"},
-  {round:"Matchday 13",date:"2026-06-23",time:"12:00 UTC-5",team1:"Portugal",team2:"Uzbekistan",group:"Group K",ground:"Houston"},
-  {round:"Matchday 13",date:"2026-06-23",time:"20:00 UTC-6",team1:"Colombia",team2:"IC Path 1 winner",group:"Group K",ground:"Guadalajara (Zapopan)"},
-  {round:"Matchday 17",date:"2026-06-27",time:"19:30 UTC-4",team1:"Colombia",team2:"Portugal",group:"Group K",ground:"Miami (Miami Gardens)"},
-  {round:"Matchday 17",date:"2026-06-27",time:"19:30 UTC-4",team1:"IC Path 1 winner",team2:"Uzbekistan",group:"Group K",ground:"Atlanta"},
-  // Group L
-  {round:"Matchday 7",date:"2026-06-17",time:"15:00 UTC-5",team1:"England",team2:"Croatia",group:"Group L",ground:"Dallas (Arlington)"},
-  {round:"Matchday 7",date:"2026-06-17",time:"19:00 UTC-4",team1:"Ghana",team2:"Panama",group:"Group L",ground:"Toronto"},
-  {round:"Matchday 13",date:"2026-06-23",time:"16:00 UTC-4",team1:"England",team2:"Ghana",group:"Group L",ground:"Boston (Foxborough)"},
-  {round:"Matchday 13",date:"2026-06-23",time:"19:00 UTC-4",team1:"Panama",team2:"Croatia",group:"Group L",ground:"Toronto"},
-  {round:"Matchday 17",date:"2026-06-27",time:"17:00 UTC-4",team1:"Panama",team2:"England",group:"Group L",ground:"New York/New Jersey (East Rutherford)"},
-  {round:"Matchday 17",date:"2026-06-27",time:"17:00 UTC-4",team1:"Croatia",team2:"Ghana",group:"Group L",ground:"Philadelphia"},
 ];
 
 // ─── 起動 ────────────────────────────────────────────────
