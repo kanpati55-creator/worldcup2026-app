@@ -488,7 +488,7 @@
 </main>
 
 <footer>
-  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> + ESPN ｜ 更新: 2026年6月13日
+  データソース: <a href="https://github.com/openfootball/worldcup.json" target="_blank">openfootball/worldcup.json</a> + ESPN ｜ 更新: 2026年6月28日（ラウンド32 確定）
   <br>スコアは取得時点の確定結果を反映しています
 </footer>
 
@@ -1127,6 +1127,37 @@ const SCORES_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wo
 const KNOCKOUT_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260628-20260719&limit=100';
 let KNOCKOUT_ESPN = []; // 決勝トーナメント試合データ（ESPN）
 
+// ─── ラウンド32 確定データ（2026年6月28日時点）────────────────
+// ESPN APIが対戦カードをシード枠（例: "Group A 2nd Place"）のままにしているため、
+// グループ最終順位 + FIFA規定 Annex C（第3位の組み合わせ表・第67番: 3位通過 B/D/E/F/I/J/K/L）
+// に基づき確定した全16試合を内蔵。ESPNが実チーム名・スコアを返すようになれば自動でそちらを優先。
+// 出典: Al Jazeera(2026-06-28) / FIFA規定 / ESPN日程
+const KNOCKOUT_FALLBACK = [
+  {round:"ラウンド32",date:"2026-06-28",team1:"South Africa",team2:"Canada",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
+  {round:"ラウンド32",date:"2026-06-29",team1:"Brazil",team2:"Japan",score1:null,score2:null,done:false,ground:"NRG Stadium（ヒューストン）"},
+  {round:"ラウンド32",date:"2026-06-29",team1:"Germany",team2:"Paraguay",score1:null,score2:null,done:false,ground:"Gillette Stadium（フォックスボロ）"},
+  {round:"ラウンド32",date:"2026-06-29",team1:"Netherlands",team2:"Morocco",score1:null,score2:null,done:false,ground:"Estadio BBVA（グアダルーペ）"},
+  {round:"ラウンド32",date:"2026-06-30",team1:"Ivory Coast",team2:"Norway",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
+  {round:"ラウンド32",date:"2026-06-30",team1:"France",team2:"Sweden",score1:null,score2:null,done:false,ground:"MetLife Stadium（イーストラザフォード）"},
+  {round:"ラウンド32",date:"2026-06-30",team1:"Mexico",team2:"Ecuador",score1:null,score2:null,done:false,ground:"Estadio Banorte（メキシコシティ）"},
+  {round:"ラウンド32",date:"2026-07-01",team1:"England",team2:"DR Congo",score1:null,score2:null,done:false,ground:"Mercedes-Benz Stadium（アトランタ）"},
+  {round:"ラウンド32",date:"2026-07-01",team1:"Belgium",team2:"Senegal",score1:null,score2:null,done:false,ground:"Lumen Field（シアトル）"},
+  {round:"ラウンド32",date:"2026-07-01",team1:"USA",team2:"Bosnia and Herzegovina",score1:null,score2:null,done:false,ground:"Levi's Stadium（サンタクララ）"},
+  {round:"ラウンド32",date:"2026-07-02",team1:"Spain",team2:"Austria",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
+  {round:"ラウンド32",date:"2026-07-02",team1:"Portugal",team2:"Croatia",score1:null,score2:null,done:false,ground:"BMO Field（トロント）"},
+  {round:"ラウンド32",date:"2026-07-02",team1:"Switzerland",team2:"Algeria",score1:null,score2:null,done:false,ground:"BC Place（バンクーバー）"},
+  {round:"ラウンド32",date:"2026-07-03",team1:"Australia",team2:"Egypt",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
+  {round:"ラウンド32",date:"2026-07-03",team1:"Argentina",team2:"Cape Verde",score1:null,score2:null,done:false,ground:"Hard Rock Stadium（マイアミガーデンズ）"},
+  {round:"ラウンド32",date:"2026-07-03",team1:"Colombia",team2:"Ghana",score1:null,score2:null,done:false,ground:"GEHA Field at Arrowhead（カンザスシティ）"},
+];
+// ESPN決勝Tデータに「実在国名」が含まれるか判定する。
+// ESPNはまだ "Group A 2nd Place" のようなシード枠の文字列を返すため、
+// JA辞書（実国名のみ）に一致するチームが1つでもあれば実データとみなす。
+function koHasRealTeams(arr) {
+  return Array.isArray(arr) && arr.some(m =>
+    !!JA[normTeam(m.team1 || '')] || !!JA[normTeam(m.team2 || '')]);
+}
+
 function loadData() {
   const statusEl = document.getElementById('fetch-status');
   statusEl.textContent = '📡 最新データを取得中...';
@@ -1156,9 +1187,10 @@ function loadData() {
       LIVE_SCORES = scores.value.map;
       scoreCount = scores.value.count;
     }
-    if (ko.status === 'fulfilled') {
-      KNOCKOUT_ESPN = ko.value;
-    }
+    // ESPNが実チーム名を返していればそれを優先。まだプレースホルダーなら内蔵の確定データを使う。
+    KNOCKOUT_ESPN = (ko.status === 'fulfilled' && koHasRealTeams(ko.value))
+      ? ko.value
+      : KNOCKOUT_FALLBACK;
     const matches = (sched.status === 'fulfilled')
       ? sched.value
       : FALLBACK_MATCHES.map(normalizeMatch);
