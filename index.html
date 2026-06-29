@@ -972,19 +972,23 @@ function parseEspnKnockoutMatches(data) {
     const dateStr = (ev.date || '').slice(0, 10);
     const timeStr = (ev.date || '').slice(11, 16); // HH:MM UTC
 
-    // ラウンド判定（イベント名 or 日付で推測）
+    // ラウンド判定: ESPNの season.slug を最優先（深夜開催でUTC日付がずれても正しく分類）
+    const slug = ((ev.season && ev.season.slug) || '').toLowerCase();
     const name = (ev.name || ev.shortName || '').toLowerCase();
-    let round = 'ラウンド32';
-    if (name.includes('third') || name.includes('3rd')) round = '3位決定戦';
-    else if (name.includes('final') && !name.includes('semi') && !name.includes('quarter')) round = '決勝';
-    else if (name.includes('semi')) round = '準決勝';
-    else if (name.includes('quarter')) round = '準々決勝';
-    else if (name.includes('round of 16') || name.includes('r16') || name.includes('16')) round = 'ラウンド16';
-    else if (dateStr >= '2026-07-19') round = '決勝';
-    else if (dateStr >= '2026-07-18') round = '3位決定戦';
-    else if (dateStr >= '2026-07-14') round = '準決勝';
-    else if (dateStr >= '2026-07-09') round = '準々決勝';
-    else if (dateStr >= '2026-07-04') round = 'ラウンド16';
+    let round;
+    if (slug.indexOf('round-of-32') >= 0) round = 'ラウンド32';
+    else if (slug.indexOf('round-of-16') >= 0) round = 'ラウンド16';
+    else if (slug.indexOf('quarter') >= 0) round = '準々決勝';
+    else if (slug.indexOf('semi') >= 0) round = '準決勝';
+    else if (slug.indexOf('3rd') >= 0 || slug.indexOf('third') >= 0) round = '3位決定戦';
+    else if (slug.indexOf('final') >= 0) round = '決勝';
+    else if (name.indexOf('quarter') >= 0) round = '準々決勝';
+    else if (name.indexOf('semi') >= 0) round = '準決勝';
+    else if (name.indexOf('third') >= 0 || name.indexOf('3rd') >= 0) round = '3位決定戦';
+    else if (name.indexOf('round of 16') >= 0) round = 'ラウンド16';
+    else if (name.indexOf('final') >= 0) round = '決勝';
+    else if (dateStr >= '2026-07-04' && dateStr < '2026-07-09') round = 'ラウンド16';
+    else round = 'ラウンド32';
 
     const venue = comp.venue;
     const ground = venue ? (venue.fullName || (venue.address && venue.address.city) || '') : '';
@@ -1158,8 +1162,8 @@ function renderKoMatchCard(m) {
   } else {
     scoreHTML = `<div class="vs-text">vs</div>`;
   }
-  const t1name = (m.team1 && m.team1 !== 'TBD') ? ja(m.team1) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
-  const t2name = (m.team2 && m.team2 !== 'TBD') ? ja(m.team2) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
+  const t1name = (m.team1 && m.team1 !== 'TBD' && JA[m.team1]) ? ja(m.team1) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
+  const t2name = (m.team2 && m.team2 !== 'TBD' && JA[m.team2]) ? ja(m.team2) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
   return `
   <div class="match-card ${cardClass}">
     <div class="match-inner">
