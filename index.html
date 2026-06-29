@@ -465,7 +465,7 @@
 
 <header>
   <div class="badge">🏆 FIFA ワールドカップ 2026</div>
-  <h1>グループステージ 試合結果 &amp; 日程</h1>
+  <h1>試合結果 &amp; 日程</h1>
   <p>カナダ・メキシコ・アメリカ共同開催 ｜ 2026年6月11日〜7月19日</p>
   <div class="header-meta">
     <span>⚽ 48カ国出場</span>
@@ -639,6 +639,26 @@ const GROUP_TEAMS = {
   L: ["England","Croatia","Ghana","Panama"],
 };
 
+// ─── グループステージ最終順位（確定・2026年6月28日）────────────
+// 出典: ユーザー提供「FIFAワールドカップ2026 グループステージ総合レポート」PDF
+// 各チーム: w(勝) d(分) l(負) pts(勝点) gd(得失点差)。得点/失点の個別値は出典に無いため保持しない。
+const FINAL_STANDINGS = {
+  A: [["Mexico",3,0,0,9,6],["South Africa",1,1,1,4,-1],["South Korea",1,0,2,3,-1],["Czechia",0,1,2,1,-4]],
+  B: [["Switzerland",2,1,0,7,4],["Canada",1,1,1,4,5],["Bosnia and Herzegovina",1,1,1,4,-1],["Qatar",0,1,2,1,-8]],
+  C: [["Brazil",2,1,0,7,6],["Morocco",2,1,0,7,3],["Scotland",1,0,2,3,-3],["Haiti",0,0,3,0,-6]],
+  D: [["USA",2,0,1,6,4],["Australia",1,1,1,4,0],["Paraguay",1,1,1,4,-2],["Türkiye",1,0,2,3,-2]],
+  E: [["Germany",2,0,1,6,6],["Ivory Coast",2,0,1,6,2],["Ecuador",1,1,1,4,0],["Curaçao",0,1,2,1,-8]],
+  F: [["Netherlands",2,1,0,7,6],["Japan",1,2,0,5,4],["Sweden",1,1,1,4,0],["Tunisia",0,0,3,0,-10]],
+  G: [["Belgium",1,2,0,5,4],["Egypt",1,2,0,5,2],["Iran",0,3,0,3,0],["New Zealand",0,1,2,1,-6]],
+  H: [["Spain",2,1,0,7,5],["Cape Verde",0,3,0,3,0],["Uruguay",0,2,1,2,-1],["Saudi Arabia",0,2,1,2,-4]],
+  I: [["France",3,0,0,9,8],["Norway",2,0,1,6,1],["Senegal",1,0,2,3,2],["Iraq",0,0,3,0,-11]],
+  J: [["Argentina",3,0,0,9,7],["Austria",1,1,1,4,0],["Algeria",1,1,1,4,-2],["Jordan",0,0,3,0,-5]],
+  K: [["Colombia",2,1,0,7,3],["Portugal",1,2,0,5,5],["DR Congo",1,1,1,4,1],["Uzbekistan",0,0,3,0,-9]],
+  L: [["England",2,1,0,7,4],["Croatia",2,0,1,6,0],["Ghana",1,1,1,4,0],["Panama",0,0,3,0,-4]],
+};
+// 3位で決勝T進出を決めた8グループ（このグループの3位も「進出」扱いで緑表示）
+const QUALIFIED_3RD = ['B','D','E','F','I','J','K','L'];
+
 // ─── ユーティリティ ──────────────────────────────────────
 function ja(name) {
   // まずプレースホルダーを正式名に変換し、日本語名を返す
@@ -747,6 +767,14 @@ function isPast(dateStr) {
 
 // ─── 順位表計算 ──────────────────────────────────────────
 function calcStandings(groupLetter, matches) {
+  // 確定済みの最終順位があればそれを優先（実数値で固定）
+  if (FINAL_STANDINGS[groupLetter]) {
+    return FINAL_STANDINGS[groupLetter].map(r => {
+      const [team, w, d, l, pts, gd] = r;
+      return { team, played: w + d + l, won: w, drawn: d, lost: l,
+        gf: null, ga: null, pts, gd };
+    });
+  }
   const teams = GROUP_TEAMS[groupLetter];
   const stats = {};
   teams.forEach(t => {
@@ -818,7 +846,7 @@ function renderSummary(byGroup) {
     const standings = calcStandings(g, matches);
     const playedTotal = matches.filter(m => getMatchScore(m)).length;
     const rows = standings.map((s, i) => `
-      <div class="summary-row${i < 2 ? ' qualify' : ''}">
+      <div class="summary-row${(i < 2 || (i === 2 && QUALIFIED_3RD.includes(g))) ? ' qualify' : ''}">
         <span class="summary-rank">${i+1}</span>
         <span class="summary-team">${ja(s.team)}</span>
         <span class="summary-stat">${s.played}試合</span>
@@ -844,7 +872,7 @@ function renderSummary(byGroup) {
         <span>カードをクリックすると各グループの詳細に移動します</span>
       </div>
     </div>
-    <p class="summary-note"><span class="dot"></span> 緑色 = 決勝トーナメント進出圏（各組上位2チーム）</p>
+    <p class="summary-note"><span class="dot"></span> 緑色 = 決勝トーナメント進出（各組上位2チーム＋3位上位8チーム）</p>
     <div class="summary-grid">${cards}</div>
   </div>`;
 }
@@ -883,24 +911,23 @@ function renderGroup(g, matches, standings, isActive) {
       <table class="standings-table">
         <thead>
           <tr>
-            <th style="width:40%">チーム</th>
+            <th style="width:44%">チーム</th>
             <th>試合</th><th>勝</th><th>分</th><th>負</th>
-            <th>得点</th><th>失点</th><th>得失点差</th><th>勝点</th>
+            <th>得失点差</th><th>勝点</th>
           </tr>
         </thead>
         <tbody>
           ${standings.map((s, i) => {
             const gd = s.gd;
             const gdClass = gd > 0 ? 'gd-pos' : gd < 0 ? 'gd-neg' : '';
-            const qualify = i < 2 ? ' q' : '';
+            const advanced = i < 2 || (i === 2 && QUALIFIED_3RD.includes(g));
+            const qualify = advanced ? ' q' : '';
             return `<tr>
               <td><span class="team-rank${qualify}">${i+1}</span>${ja(s.team)}</td>
               <td>${s.played}</td>
               <td>${s.won}</td>
               <td>${s.drawn}</td>
               <td>${s.lost}</td>
-              <td>${s.gf}</td>
-              <td>${s.ga}</td>
               <td class="${gdClass}">${gd > 0 ? '+' : ''}${gd}</td>
               <td class="pts">${s.pts}</td>
             </tr>`;
