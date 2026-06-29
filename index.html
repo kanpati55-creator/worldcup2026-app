@@ -133,6 +133,11 @@
       border-bottom-color: var(--secondary);
       background: #f7fafc;
     }
+    .tab-btn.tab-ko {
+      color: var(--secondary);
+      font-weight: 800;
+    }
+    .tab-btn.tab-ko.active { color: var(--secondary); }
 
     /* ─── Main content ─── */
     main { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
@@ -802,14 +807,14 @@ function calcStandings(groupLetter, matches) {
 
 // ─── レンダリング ────────────────────────────────────────
 function renderAll(allMatches) {
-  // ── タブ生成（先頭に「まとめ」タブを置く）
+  // ── タブ生成（「🏆 決勝T」を一番左に、続けて「GLまとめ」、各グループの順）
   const tabsEl = document.getElementById('tabs');
   tabsEl.innerHTML =
-    `<button class="tab-btn active" onclick="switchGroup('SUMMARY')" id="tab-SUMMARY">📋 まとめ</button>` +
+    `<button class="tab-btn tab-ko active" onclick="switchGroup('KO')" id="tab-KO">🏆 決勝T</button>` +
+    `<button class="tab-btn" onclick="switchGroup('SUMMARY')" id="tab-SUMMARY">📋 GLまとめ</button>` +
     GROUPS.map(g =>
       `<button class="tab-btn" onclick="switchGroup('${g}')" id="tab-${g}">グループ ${g}</button>`
-    ).join('') +
-    `<button class="tab-btn" onclick="switchGroup('KO')" id="tab-KO">🏆 決勝T</button>`;
+    ).join('');
 
   // ── グループ別に分類
   const byGroup = {};
