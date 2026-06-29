@@ -415,44 +415,7 @@
       box-shadow: 0 1px 6px rgba(0,0,0,0.07);
     }
     .bracket-scroll svg { display: block; border-radius: 12px; }
-    .bracket {
-      display: flex;
-      gap: 12px;
-      min-width: 680px;
-      padding: 8px 4px;
-      align-items: flex-start;
-    }
-    .bracket-col { flex: 1; min-width: 120px; }
-    .bracket-round-title {
-      text-align: center;
-      font-size: 0.75em;
-      font-weight: 700;
-      color: var(--muted);
-      padding: 4px 0 8px;
-      letter-spacing: 0.03em;
-      line-height: 1.5;
-    }
-    .bracket-matches { display: flex; flex-direction: column; gap: 6px; }
-    .bracket-match {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    }
-    .bracket-team {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 5px 8px;
-      font-size: 0.78em;
-      border-bottom: 1px solid var(--border);
-      gap: 4px;
-    }
-    .bracket-team:last-child { border-bottom: none; }
-    .bracket-team.winner { background: #f0fff4; font-weight: 700; color: var(--primary); }
-    .bracket-team-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bracket-score { font-weight: 800; color: var(--secondary); flex-shrink: 0; }
+    .ko-hint { font-size: 0.78em; color: var(--muted); margin: 0 0 14px; }
     .ko-round-section { margin-bottom: 24px; }
     .ko-empty {
       text-align: center;
@@ -462,7 +425,6 @@
       border-radius: 12px;
       box-shadow: 0 1px 6px rgba(0,0,0,0.07);
     }
-    .ko-hint { font-size: 0.78em; color: var(--muted); margin: 0 0 14px; }
   </style>
 </head>
 <body>
@@ -1076,37 +1038,6 @@ function renderKnockout(matches) {
   </div>`;
 }
 
-function renderBracket(byRound) {
-  const rounds = KO_ROUND_ORDER.filter(r => byRound[r] && byRound[r].length > 0);
-  if (rounds.length === 0) return '';
-  const cols = rounds.map(r => {
-    const ms = byRound[r];
-    const boxes = ms.map(m => {
-      const t1Won = m.done && m.score1 > m.score2;
-      const t2Won = m.done && m.score2 > m.score1;
-      const t1label = (m.team1 && m.team1 !== 'TBD') ? (JA[m.team1] || m.team1) : '未定';
-      const t2label = (m.team2 && m.team2 !== 'TBD') ? (JA[m.team2] || m.team2) : '未定';
-      return `
-        <div class="bracket-match">
-          <div class="bracket-team${t1Won ? ' winner' : ''}">
-            <span class="bracket-team-name">${t1label}</span>
-            ${m.done ? `<span class="bracket-score">${m.score1}</span>` : ''}
-          </div>
-          <div class="bracket-team${t2Won ? ' winner' : ''}">
-            <span class="bracket-team-name">${t2label}</span>
-            ${m.done ? `<span class="bracket-score">${m.score2}</span>` : ''}
-          </div>
-        </div>`;
-    }).join('');
-    return `
-      <div class="bracket-col">
-        <div class="bracket-round-title">${r}<br><small style="font-weight:400">${ms.length}試合</small></div>
-        <div class="bracket-matches">${boxes}</div>
-      </div>`;
-  }).join('');
-  return `<div class="bracket-scroll"><div class="bracket">${cols}</div></div>`;
-}
-
 // ─── NHK風 勝ち上がりブラケット（SVG生成）─────────────────
 // 公式ブラケット順（左8試合・右8試合）。実チーム名を内蔵しているため常に表示される。
 const KO_BRACKET_LEFT = [
@@ -1258,76 +1189,6 @@ const KNOCKOUT_FALLBACK = [
 function koHasRealTeams(arr) {
   return Array.isArray(arr) && arr.some(m =>
     !!JA[normTeam(m.team1 || '')] || !!JA[normTeam(m.team2 || '')]);
-}
-
-// ─── NHK風 勝ち上がりブラケット（SVG生成）─────────────────
-// 公式ブラケット順（左8試合・右8試合）。実チーム名を内蔵しているため常に表示される。
-const KO_BRACKET_LEFT = [
-  ["Germany","Paraguay"],["France","Sweden"],["South Africa","Canada"],["Netherlands","Morocco"],
-  ["Portugal","Croatia"],["Spain","Austria"],["USA","Bosnia and Herzegovina"],["Belgium","Senegal"],
-];
-const KO_BRACKET_RIGHT = [
-  ["Brazil","Japan"],["Ivory Coast","Norway"],["Mexico","Ecuador"],["England","DR Congo"],
-  ["Argentina","Cape Verde"],["Australia","Egypt"],["Switzerland","Algeria"],["Colombia","Ghana"],
-];
-// ブラケット用の短縮ラベル（長い国名はピル幅に収める）
-const KO_SHORT = { "Bosnia and Herzegovina": "ボスニア 🇧🇦" };
-function koLabel(t) { return KO_SHORT[t] || JA[t] || t; }
-
-function buildKnockoutBracketSVG() {
-  const pillW = 150, pillH = 21, intra = 3, matchH = 2 * pillH + intra, pitch = matchH + 15, top = 46;
-  const cx = i => top + i * pitch + matchH / 2;
-  const centers = n => { const a = []; for (let i = 0; i < n; i++) a.push(cx(i)); return a; };
-  const avg = a => { const o = []; for (let i = 0; i < a.length; i += 2) o.push((a[i] + a[i + 1]) / 2); return o; };
-  const r32 = centers(8), r16 = avg(r32), qf = avg(r16), sf = avg(qf);
-  const H = Math.round(cx(7) + matchH / 2 + 28);
-  const LX = [12, 196, 372, 548], W = 1596, RX = LX.map(x => W - x - pillW);
-  const cyF = sf[0], xF = Math.round(W / 2 - pillW / 2);
-  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  let s = '';
-  const pill = (x, y, label, filled) => {
-    const fill = filled ? '#ffffff' : '#eef2f7', tcol = filled ? '#1a3a5c' : '#9aa6b2', fw = filled ? '700' : '500';
-    s += `<rect x="${x}" y="${y - pillH / 2}" width="${pillW}" height="${pillH}" rx="6" fill="${fill}" stroke="#d4dde6"/>`;
-    s += `<text x="${x + 10}" y="${y + 4}" font-size="12.5" font-weight="${fw}" fill="${tcol}">${esc(label)}</text>`;
-  };
-  const mp = (x, cy, pair) => {
-    pill(x, cy - (pillH + intra) / 2, pair ? koLabel(pair[0]) : '未定', !!pair);
-    pill(x, cy + (pillH + intra) / 2, pair ? koLabel(pair[1]) : '未定', !!pair);
-  };
-  const connect = (cc, cxEdge, pc, pxEdge) => {
-    const midX = (cxEdge + pxEdge) / 2;
-    for (let p = 0; p < pc.length; p++) {
-      const a = cc[2 * p], b = cc[2 * p + 1], c = pc[p];
-      [a, b].forEach(y => { s += `<path d="M ${cxEdge} ${y} H ${midX} V ${c} H ${pxEdge}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`; });
-    }
-  };
-  // 左
-  KO_BRACKET_LEFT.forEach((pr, i) => mp(LX[0], r32[i], pr));
-  [r16, qf, sf].forEach((col, k) => col.forEach(y => mp(LX[k + 1], y, null)));
-  connect(r32, LX[0] + pillW, r16, LX[1]);
-  connect(r16, LX[1] + pillW, qf, LX[2]);
-  connect(qf, LX[2] + pillW, sf, LX[3]);
-  // 右（ミラー）
-  KO_BRACKET_RIGHT.forEach((pr, i) => mp(RX[0], r32[i], pr));
-  [r16, qf, sf].forEach((col, k) => col.forEach(y => mp(RX[k + 1], y, null)));
-  connect(r32, RX[0], r16, RX[1] + pillW);
-  connect(r16, RX[1], qf, RX[2] + pillW);
-  connect(qf, RX[2], sf, RX[3] + pillW);
-  // 決勝（中央2枠）＋トロフィー
-  const fTop = cyF - (pillH + intra) / 2, fBot = cyF + (pillH + intra) / 2;
-  pill(xF, fTop, '未定', false); pill(xF, fBot, '未定', false);
-  s += `<path d="M ${LX[3] + pillW} ${sf[0]} H ${(LX[3] + pillW + xF) / 2} V ${fTop} H ${xF}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`;
-  s += `<path d="M ${RX[3]} ${sf[0]} H ${(RX[3] + xF + pillW) / 2} V ${fBot} H ${xF + pillW}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`;
-  s += `<text x="${W / 2}" y="${cyF - 34}" font-size="38" text-anchor="middle">🏆</text>`;
-  s += `<rect x="${xF}" y="${cyF + 30}" width="${pillW}" height="20" rx="6" fill="#c8102e"/>`;
-  s += `<text x="${W / 2}" y="${cyF + 44}" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">決勝 FINAL ・ 7/19</text>`;
-  // ラウンド見出し
-  let head = '';
-  ['ラウンド32', 'ラウンド16', '準々決勝', '準決勝'].forEach((r, i) => {
-    head += `<text x="${LX[i] + pillW / 2}" y="34" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
-    head += `<text x="${RX[i] + pillW / 2}" y="34" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
-  });
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:none" font-family="'Hiragino Sans','Noto Sans JP',sans-serif"><rect width="${W}" height="${H}" fill="#f7fafc"/>${head}${s}</svg>`;
 }
 
 function loadData() {
