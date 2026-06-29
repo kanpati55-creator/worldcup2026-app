@@ -717,6 +717,19 @@ function jstLabel(dateStr, timeStr) {
   return `日本時間 ${j.month}/${j.day}(${j.weekday}) ${j.hour}:${mm}`;
 }
 
+// UTCの日付("YYYY-MM-DD")＋時刻("HH:MM")を日本時間(JST=+9h)に変換してラベル化。
+// 決勝T（ESPNはUTCで日時を返す）用。時刻が無ければ日付のみ返す。
+function jstFromUTC(dateStr, timeStr) {
+  if (!dateStr) return '';
+  const p = dateStr.split('-').map(Number);
+  if (p.length !== 3) return '';
+  let h = 0, mi = 0;
+  if (timeStr) { const t = String(timeStr).split(':'); h = Number(t[0]) || 0; mi = Number(t[1]) || 0; }
+  const d = new Date(Date.UTC(p[0], p[1] - 1, p[2], h, mi) + 9 * 3600 * 1000);
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${WEEKDAYS_JA[d.getUTCDay()]})` + (timeStr ? ` ${d.getUTCHours()}:${mm}` : '');
+}
+
 // 「本日」を固定日付ではなく実際の日付で判定する
 function todayStr() {
   const d = new Date();
@@ -1164,6 +1177,7 @@ function renderKoMatchCard(m) {
   }
   const t1name = (m.team1 && m.team1 !== 'TBD' && JA[m.team1]) ? ja(m.team1) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
   const t2name = (m.team2 && m.team2 !== 'TBD' && JA[m.team2]) ? ja(m.team2) : '<span style="color:var(--muted);font-size:0.85em">未定</span>';
+  const jst = jstFromUTC(m.date, m.time);
   return `
   <div class="match-card ${cardClass}">
     <div class="match-inner">
@@ -1171,7 +1185,7 @@ function renderKoMatchCard(m) {
       <div class="score-box">${scoreHTML}${badge}</div>
       <div class="team-side right"><div class="team-name">${t2name}</div></div>
     </div>
-    <div class="match-venue">📅 ${m.date ? formatDate(m.date) : ''}　📍 ${m.ground || ''}</div>
+    <div class="match-venue">🗓️ ${jst ? '日本時間 ' + jst + ' KO' : ''}　📍 ${m.ground || ''}</div>
   </div>`;
 }
 
@@ -1199,28 +1213,28 @@ const SCORES_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wo
 const KNOCKOUT_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260628-20260719&limit=100';
 let KNOCKOUT_ESPN = []; // 決勝トーナメント試合データ（ESPN）
 
-// ─── ラウンド32 確定データ（2026年6月28日時点）────────────────
+// ─── ラウンド32 確定データ（2026年6月28日時点・日時はUTC）────────────────
 // ESPN APIが対戦カードをシード枠（例: "Group A 2nd Place"）のままにしているため、
 // グループ最終順位 + FIFA規定 Annex C（第3位の組み合わせ表・第67番: 3位通過 B/D/E/F/I/J/K/L）
-// に基づき確定した全16試合を内蔵。score1/score2 に結果を入れると、ブラケットの勝者(赤線)が自動表示される。
+// に基づき確定した全16試合を内蔵。date/time はUTC。score1/score2 に結果を入れると勝者(赤線)が自動表示される。
 // 出典: Al Jazeera(2026-06-28) / FIFA規定 / ESPN日程
 const KNOCKOUT_FALLBACK = [
-  {round:"ラウンド32",date:"2026-06-28",team1:"South Africa",team2:"Canada",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
-  {round:"ラウンド32",date:"2026-06-29",team1:"Brazil",team2:"Japan",score1:null,score2:null,done:false,ground:"NRG Stadium（ヒューストン）"},
-  {round:"ラウンド32",date:"2026-06-29",team1:"Germany",team2:"Paraguay",score1:null,score2:null,done:false,ground:"Gillette Stadium（フォックスボロ）"},
-  {round:"ラウンド32",date:"2026-06-29",team1:"Netherlands",team2:"Morocco",score1:null,score2:null,done:false,ground:"Estadio BBVA（グアダルーペ）"},
-  {round:"ラウンド32",date:"2026-06-30",team1:"Ivory Coast",team2:"Norway",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
-  {round:"ラウンド32",date:"2026-06-30",team1:"France",team2:"Sweden",score1:null,score2:null,done:false,ground:"MetLife Stadium（イーストラザフォード）"},
-  {round:"ラウンド32",date:"2026-06-30",team1:"Mexico",team2:"Ecuador",score1:null,score2:null,done:false,ground:"Estadio Banorte（メキシコシティ）"},
-  {round:"ラウンド32",date:"2026-07-01",team1:"England",team2:"DR Congo",score1:null,score2:null,done:false,ground:"Mercedes-Benz Stadium（アトランタ）"},
-  {round:"ラウンド32",date:"2026-07-01",team1:"Belgium",team2:"Senegal",score1:null,score2:null,done:false,ground:"Lumen Field（シアトル）"},
-  {round:"ラウンド32",date:"2026-07-01",team1:"USA",team2:"Bosnia and Herzegovina",score1:null,score2:null,done:false,ground:"Levi's Stadium（サンタクララ）"},
-  {round:"ラウンド32",date:"2026-07-02",team1:"Spain",team2:"Austria",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
-  {round:"ラウンド32",date:"2026-07-02",team1:"Portugal",team2:"Croatia",score1:null,score2:null,done:false,ground:"BMO Field（トロント）"},
-  {round:"ラウンド32",date:"2026-07-02",team1:"Switzerland",team2:"Algeria",score1:null,score2:null,done:false,ground:"BC Place（バンクーバー）"},
-  {round:"ラウンド32",date:"2026-07-03",team1:"Australia",team2:"Egypt",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
-  {round:"ラウンド32",date:"2026-07-03",team1:"Argentina",team2:"Cape Verde",score1:null,score2:null,done:false,ground:"Hard Rock Stadium（マイアミガーデンズ）"},
-  {round:"ラウンド32",date:"2026-07-03",team1:"Colombia",team2:"Ghana",score1:null,score2:null,done:false,ground:"GEHA Field at Arrowhead（カンザスシティ）"},
+  {round:"ラウンド32",date:"2026-06-28",time:"19:00",team1:"South Africa",team2:"Canada",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
+  {round:"ラウンド32",date:"2026-06-29",time:"17:00",team1:"Brazil",team2:"Japan",score1:null,score2:null,done:false,ground:"NRG Stadium（ヒューストン）"},
+  {round:"ラウンド32",date:"2026-06-29",time:"20:30",team1:"Germany",team2:"Paraguay",score1:null,score2:null,done:false,ground:"Gillette Stadium（フォックスボロ）"},
+  {round:"ラウンド32",date:"2026-06-30",time:"01:00",team1:"Netherlands",team2:"Morocco",score1:null,score2:null,done:false,ground:"Estadio BBVA（グアダルーペ）"},
+  {round:"ラウンド32",date:"2026-06-30",time:"17:00",team1:"Ivory Coast",team2:"Norway",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
+  {round:"ラウンド32",date:"2026-06-30",time:"21:00",team1:"France",team2:"Sweden",score1:null,score2:null,done:false,ground:"MetLife Stadium（イーストラザフォード）"},
+  {round:"ラウンド32",date:"2026-07-01",time:"01:00",team1:"Mexico",team2:"Ecuador",score1:null,score2:null,done:false,ground:"Estadio Banorte（メキシコシティ）"},
+  {round:"ラウンド32",date:"2026-07-01",time:"16:00",team1:"England",team2:"DR Congo",score1:null,score2:null,done:false,ground:"Mercedes-Benz Stadium（アトランタ）"},
+  {round:"ラウンド32",date:"2026-07-01",time:"20:00",team1:"Belgium",team2:"Senegal",score1:null,score2:null,done:false,ground:"Lumen Field（シアトル）"},
+  {round:"ラウンド32",date:"2026-07-02",time:"00:00",team1:"USA",team2:"Bosnia and Herzegovina",score1:null,score2:null,done:false,ground:"Levi's Stadium（サンタクララ）"},
+  {round:"ラウンド32",date:"2026-07-02",time:"19:00",team1:"Spain",team2:"Austria",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
+  {round:"ラウンド32",date:"2026-07-02",time:"23:00",team1:"Portugal",team2:"Croatia",score1:null,score2:null,done:false,ground:"BMO Field（トロント）"},
+  {round:"ラウンド32",date:"2026-07-03",time:"03:00",team1:"Switzerland",team2:"Algeria",score1:null,score2:null,done:false,ground:"BC Place（バンクーバー）"},
+  {round:"ラウンド32",date:"2026-07-03",time:"18:00",team1:"Australia",team2:"Egypt",score1:null,score2:null,done:false,ground:"AT&T Stadium（アーリントン）"},
+  {round:"ラウンド32",date:"2026-07-03",time:"22:00",team1:"Argentina",team2:"Cape Verde",score1:null,score2:null,done:false,ground:"Hard Rock Stadium（マイアミガーデンズ）"},
+  {round:"ラウンド32",date:"2026-07-04",time:"01:30",team1:"Colombia",team2:"Ghana",score1:null,score2:null,done:false,ground:"GEHA Field at Arrowhead（カンザスシティ）"},
 ];
 // ESPN決勝Tデータに「実在国名」が含まれるか判定する。
 // ESPNはまだ "Group A 2nd Place" のようなシード枠の文字列を返すため、
