@@ -409,13 +409,15 @@
     .bracket-scroll {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
-      margin-bottom: 20px;
+      margin-bottom: 14px;
       padding-bottom: 8px;
       border-radius: 12px;
       box-shadow: 0 1px 6px rgba(0,0,0,0.07);
     }
     .bracket-scroll svg { display: block; border-radius: 12px; }
     .ko-hint { font-size: 0.78em; color: var(--muted); margin: 0 0 14px; }
+    .ko-legend { font-size: 0.76em; color: var(--muted); margin: 0 0 16px; display: flex; align-items: center; gap: 6px; }
+    .ko-legend i { width: 22px; height: 3px; background: var(--secondary); display: inline-block; border-radius: 2px; }
     .ko-round-section { margin-bottom: 24px; }
     .ko-empty {
       text-align: center;
@@ -1033,6 +1035,7 @@ function renderKnockout(matches) {
       </div>
     </div>
     <p class="ko-hint">← 横にスクロールすると全体のブラケットが見られます</p>
+    <p class="ko-legend"><i></i> 赤いライン＝勝ち上がり（勝者の進路）</p>
     ${bracketHTML}
     ${listHTML}
   </div>`;
@@ -1052,58 +1055,90 @@ const KO_BRACKET_RIGHT = [
 const KO_SHORT = { "Bosnia and Herzegovina": "ボスニア 🇧🇦" };
 function koLabel(t) { return KO_SHORT[t] || JA[t] || t; }
 
+// 勝ち上がり対応のブラケットSVG。スコアが入った試合は勝者を赤でハイライトし、
+// 勝者の進路を赤線で描画。勝者は次ラウンドの枠へ自動的に配置される。
 function buildKnockoutBracketSVG() {
-  const pillW = 150, pillH = 21, intra = 3, matchH = 2 * pillH + intra, pitch = matchH + 15, top = 46;
+  const pillW = 118, pillH = 20, intra = 3, matchH = 2 * pillH + intra, pitch = matchH + 15, top = 44;
   const cx = i => top + i * pitch + matchH / 2;
   const centers = n => { const a = []; for (let i = 0; i < n; i++) a.push(cx(i)); return a; };
   const avg = a => { const o = []; for (let i = 0; i < a.length; i += 2) o.push((a[i] + a[i + 1]) / 2); return o; };
   const r32 = centers(8), r16 = avg(r32), qf = avg(r16), sf = avg(qf);
-  const H = Math.round(cx(7) + matchH / 2 + 28);
-  const LX = [12, 196, 372, 548], W = 1596, RX = LX.map(x => W - x - pillW);
+  const colC = [r32, r16, qf, sf];
+  const H = Math.round(cx(7) + matchH / 2 + 26);
+  const LX = [8, 146, 284, 422], W = 1210, RX = LX.map(x => W - x - pillW);
   const cyF = sf[0], xF = Math.round(W / 2 - pillW / 2);
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   let s = '';
-  const pill = (x, y, label, filled) => {
-    const fill = filled ? '#ffffff' : '#eef2f7', tcol = filled ? '#1a3a5c' : '#9aa6b2', fw = filled ? '700' : '500';
-    s += `<rect x="${x}" y="${y - pillH / 2}" width="${pillW}" height="${pillH}" rx="6" fill="${fill}" stroke="#d4dde6"/>`;
-    s += `<text x="${x + 10}" y="${y + 4}" font-size="12.5" font-weight="${fw}" fill="${tcol}">${esc(label)}</text>`;
+  const pill = (x, y, label, filled, win) => {
+    const fill = win ? '#fff5f5' : (filled ? '#ffffff' : '#eef2f7');
+    const stroke = win ? '#c8102e' : '#d4dde6';
+    const tcol = win ? '#c8102e' : (filled ? '#1a3a5c' : '#9aa6b2');
+    const fw = (filled || win) ? '700' : '500';
+    s += `<rect x="${x}" y="${y - pillH / 2}" width="${pillW}" height="${pillH}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${win ? '2' : '1'}"/>`;
+    s += `<text x="${x + 9}" y="${y + 4}" font-size="11.5" font-weight="${fw}" fill="${tcol}">${esc(label)}</text>`;
   };
-  const mp = (x, cy, pair) => {
-    pill(x, cy - (pillH + intra) / 2, pair ? koLabel(pair[0]) : '未定', !!pair);
-    pill(x, cy + (pillH + intra) / 2, pair ? koLabel(pair[1]) : '未定', !!pair);
-  };
-  const connect = (cc, cxEdge, pc, pxEdge) => {
-    const midX = (cxEdge + pxEdge) / 2;
-    for (let p = 0; p < pc.length; p++) {
-      const a = cc[2 * p], b = cc[2 * p + 1], c = pc[p];
-      [a, b].forEach(y => { s += `<path d="M ${cxEdge} ${y} H ${midX} V ${c} H ${pxEdge}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`; });
+  const dataArr = () => (typeof KNOCKOUT_ESPN !== 'undefined' && koHasRealTeams(KNOCKOUT_ESPN)) ? KNOCKOUT_ESPN : KNOCKOUT_FALLBACK;
+  const koScore = (a, b) => {
+    if (!a || !b) return null;
+    for (const m of dataArr()) {
+      if (m.score1 == null || m.score2 == null) continue;
+      const t1 = normTeam(m.team1), t2 = normTeam(m.team2);
+      if (t1 === a && t2 === b) return [m.score1, m.score2];
+      if (t1 === b && t2 === a) return [m.score2, m.score1];
     }
+    return null;
   };
-  // 左
-  KO_BRACKET_LEFT.forEach((pr, i) => mp(LX[0], r32[i], pr));
-  [r16, qf, sf].forEach((col, k) => col.forEach(y => mp(LX[k + 1], y, null)));
-  connect(r32, LX[0] + pillW, r16, LX[1]);
-  connect(r16, LX[1] + pillW, qf, LX[2]);
-  connect(qf, LX[2] + pillW, sf, LX[3]);
-  // 右（ミラー）
-  KO_BRACKET_RIGHT.forEach((pr, i) => mp(RX[0], r32[i], pr));
-  [r16, qf, sf].forEach((col, k) => col.forEach(y => mp(RX[k + 1], y, null)));
-  connect(r32, RX[0], r16, RX[1] + pillW);
-  connect(r16, RX[1], qf, RX[2] + pillW);
-  connect(qf, RX[2], sf, RX[3] + pillW);
-  // 決勝（中央2枠）＋トロフィー
+  const koWin = (a, b) => { const sc = koScore(a, b); if (!sc) return null; return sc[0] > sc[1] ? a : (sc[1] > sc[0] ? b : null); };
+  const buildSide = pairs => {
+    const rounds = [pairs.map(p => [p[0], p[1]])];
+    for (let r = 0; r < 3; r++) {
+      const w = rounds[r].map(m => koWin(m[0], m[1]));
+      const nx = [];
+      for (let j = 0; j < w.length; j += 2) nx.push([w[j], w[j + 1]]);
+      rounds.push(nx);
+    }
+    return rounds;
+  };
+  const drawSide = (pairs, XS, dir) => {
+    const rounds = buildSide(pairs);
+    for (let r = 0; r < 4; r++) {
+      const ms = rounds[r], cc = colC[r], x = XS[r];
+      ms.forEach((m, i) => {
+        const w = koWin(m[0], m[1]);
+        pill(x, cc[i] - (pillH + intra) / 2, m[0] ? koLabel(m[0]) : '未定', !!m[0], !!(w && w === m[0]));
+        pill(x, cc[i] + (pillH + intra) / 2, m[1] ? koLabel(m[1]) : '未定', !!m[1], !!(w && w === m[1]));
+      });
+    }
+    for (let r = 0; r < 3; r++) {
+      const childC = colC[r], parentC = colC[r + 1];
+      const childEdge = dir > 0 ? XS[r] + pillW : XS[r], parentEdge = dir > 0 ? XS[r + 1] : XS[r + 1] + pillW;
+      const cw = rounds[r].map(m => koWin(m[0], m[1]));
+      for (let p = 0; p < parentC.length; p++) {
+        const a = childC[2 * p], b = childC[2 * p + 1], pc = parentC[p];
+        [[a, 2 * p], [b, 2 * p + 1]].forEach(([y, ci]) => {
+          const mid = (childEdge + parentEdge) / 2, red = !!cw[ci];
+          s += `<path d="M ${childEdge} ${y} H ${mid} V ${pc} H ${parentEdge}" fill="none" stroke="${red ? '#c8102e' : '#c2ccd6'}" stroke-width="${red ? '2.5' : '1.5'}"/>`;
+        });
+      }
+    }
+    return rounds;
+  };
+  const Lr = drawSide(KO_BRACKET_LEFT, LX, 1);
+  const Rr = drawSide(KO_BRACKET_RIGHT, RX, -1);
+  const lFin = koWin(Lr[3][0][0], Lr[3][0][1]), rFin = koWin(Rr[3][0][0], Rr[3][0][1]);
   const fTop = cyF - (pillH + intra) / 2, fBot = cyF + (pillH + intra) / 2;
-  pill(xF, fTop, '未定', false); pill(xF, fBot, '未定', false);
-  s += `<path d="M ${LX[3] + pillW} ${sf[0]} H ${(LX[3] + pillW + xF) / 2} V ${fTop} H ${xF}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`;
-  s += `<path d="M ${RX[3]} ${sf[0]} H ${(RX[3] + xF + pillW) / 2} V ${fBot} H ${xF + pillW}" fill="none" stroke="#c2ccd6" stroke-width="1.5"/>`;
-  s += `<text x="${W / 2}" y="${cyF - 34}" font-size="38" text-anchor="middle">🏆</text>`;
-  s += `<rect x="${xF}" y="${cyF + 30}" width="${pillW}" height="20" rx="6" fill="#c8102e"/>`;
-  s += `<text x="${W / 2}" y="${cyF + 44}" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">決勝 FINAL ・ 7/19</text>`;
-  // ラウンド見出し
+  const champ = koWin(lFin, rFin);
+  pill(xF, fTop, lFin ? koLabel(lFin) : '未定', !!lFin, !!(champ && champ === lFin));
+  pill(xF, fBot, rFin ? koLabel(rFin) : '未定', !!rFin, !!(champ && champ === rFin));
+  s += `<path d="M ${LX[3] + pillW} ${sf[0]} H ${(LX[3] + pillW + xF) / 2} V ${fTop} H ${xF}" fill="none" stroke="${lFin ? '#c8102e' : '#c2ccd6'}" stroke-width="${lFin ? '2.5' : '1.5'}"/>`;
+  s += `<path d="M ${RX[3]} ${sf[0]} H ${(RX[3] + xF + pillW) / 2} V ${fBot} H ${xF + pillW}" fill="none" stroke="${rFin ? '#c8102e' : '#c2ccd6'}" stroke-width="${rFin ? '2.5' : '1.5'}"/>`;
+  s += `<text x="${W / 2}" y="${cyF - 32}" font-size="34" text-anchor="middle">🏆</text>`;
+  s += `<rect x="${xF}" y="${cyF + 28}" width="${pillW}" height="19" rx="6" fill="#c8102e"/>`;
+  s += `<text x="${W / 2}" y="${cyF + 41}" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">${champ ? koLabel(champ).replace(/ .*/, '') + ' 優勝' : '決勝 FINAL ・ 7/19'}</text>`;
   let head = '';
   ['ラウンド32', 'ラウンド16', '準々決勝', '準決勝'].forEach((r, i) => {
-    head += `<text x="${LX[i] + pillW / 2}" y="34" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
-    head += `<text x="${RX[i] + pillW / 2}" y="34" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
+    head += `<text x="${LX[i] + pillW / 2}" y="32" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
+    head += `<text x="${RX[i] + pillW / 2}" y="32" font-size="11" font-weight="700" fill="#718096" text-anchor="middle">${r}</text>`;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:none" font-family="'Hiragino Sans','Noto Sans JP',sans-serif"><rect width="${W}" height="${H}" fill="#f7fafc"/>${head}${s}</svg>`;
 }
@@ -1163,7 +1198,7 @@ let KNOCKOUT_ESPN = []; // 決勝トーナメント試合データ（ESPN）
 // ─── ラウンド32 確定データ（2026年6月28日時点）────────────────
 // ESPN APIが対戦カードをシード枠（例: "Group A 2nd Place"）のままにしているため、
 // グループ最終順位 + FIFA規定 Annex C（第3位の組み合わせ表・第67番: 3位通過 B/D/E/F/I/J/K/L）
-// に基づき確定した全16試合を内蔵。ESPNが実チーム名・スコアを返すようになれば自動でそちらを優先。
+// に基づき確定した全16試合を内蔵。score1/score2 に結果を入れると、ブラケットの勝者(赤線)が自動表示される。
 // 出典: Al Jazeera(2026-06-28) / FIFA規定 / ESPN日程
 const KNOCKOUT_FALLBACK = [
   {round:"ラウンド32",date:"2026-06-28",team1:"South Africa",team2:"Canada",score1:null,score2:null,done:false,ground:"SoFi Stadium（イングルウッド）"},
