@@ -1006,6 +1006,17 @@ function parseEspnKnockoutMatches(data) {
     const dateStr = (ev.date || '').slice(0, 10);
     const timeStr = (ev.date || '').slice(11, 16); // HH:MM UTC
 
+    // 勝者（延長・PKで決着した場合も winner フラグで正しく取得）＋ PKスコア・決着種別
+    let winner = null, pen1 = null, pen2 = null;
+    if (done) {
+      if (cs[0].winner) winner = t1;
+      else if (cs[1].winner) winner = t2;
+      if (cs[0].shootoutScore != null && cs[1].shootoutScore != null) {
+        pen1 = Number(cs[0].shootoutScore); pen2 = Number(cs[1].shootoutScore);
+      }
+    }
+    const detail = (ev.status && ev.status.type && (ev.status.type.shortDetail || ev.status.type.detail)) || '';
+
     // ラウンド判定: ESPNの season.slug を最優先（深夜開催でUTC日付がずれても正しく分類）
     const slug = ((ev.season && ev.season.slug) || '').toLowerCase();
     const name = (ev.name || ev.shortName || '').toLowerCase();
@@ -1028,7 +1039,7 @@ function parseEspnKnockoutMatches(data) {
     const ground = venue ? (venue.fullName || (venue.address && venue.address.city) || '') : '';
 
     results.push({ date: dateStr, time: timeStr, team1: t1, team2: t2,
-      score1: s1, score2: s2, done, round, ground });
+      score1: s1, score2: s2, done, round, ground, winner, pen1, pen2, detail });
   });
   return results.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 }
@@ -1093,7 +1104,7 @@ const KO_BRACKET_RIGHT = [
 const KO_SHORT = { "Bosnia and Herzegovina": "ボスニア 🇧🇦" };
 function koLabel(t) { return KO_SHORT[t] || JA[t] || t; }
 
-// 勝ち上がり対応のブラケットSVG。スコアが入った試合は勝者を赤でハイライトし、
+// 勝ち上がり対応のブラケットSVG。スコア（または延長・PKの勝者）で決着した試合は勝者を赤でハイライトし、
 // 勝者の進路を赤線で描画。勝者は次ラウンドの枠へ自動的に配置される。
 function buildKnockoutBracketSVG() {
   const pillW = 118, pillH = 20, intra = 3, matchH = 2 * pillH + intra, pitch = matchH + 15, top = 44;
@@ -1116,17 +1127,21 @@ function buildKnockoutBracketSVG() {
     s += `<text x="${x + 9}" y="${y + 4}" font-size="11.5" font-weight="${fw}" fill="${tcol}">${esc(label)}</text>`;
   };
   const dataArr = () => (typeof KNOCKOUT_ESPN !== 'undefined' && koHasRealTeams(KNOCKOUT_ESPN)) ? KNOCKOUT_ESPN : KNOCKOUT_FALLBACK;
-  const koScore = (a, b) => {
+  // 勝者判定: ESPNの winner フラグ（延長・PK決着を含む）を最優先。無ければスコアで判定。
+  const koWin = (a, b) => {
     if (!a || !b) return null;
     for (const m of dataArr()) {
-      if (m.score1 == null || m.score2 == null) continue;
       const t1 = normTeam(m.team1), t2 = normTeam(m.team2);
-      if (t1 === a && t2 === b) return [m.score1, m.score2];
-      if (t1 === b && t2 === a) return [m.score2, m.score1];
+      if (!((t1 === a && t2 === b) || (t1 === b && t2 === a))) continue;
+      if (m.winner) { const w = normTeam(m.winner); if (w === a || w === b) return w; }
+      if (m.done && m.score1 != null && m.score2 != null) {
+        if (m.score1 > m.score2) return t1;
+        if (m.score2 > m.score1) return t2;
+      }
+      return null;
     }
     return null;
   };
-  const koWin = (a, b) => { const sc = koScore(a, b); if (!sc) return null; return sc[0] > sc[1] ? a : (sc[1] > sc[0] ? b : null); };
   const buildSide = pairs => {
     const rounds = [pairs.map(p => [p[0], p[1]])];
     for (let r = 0; r < 3; r++) {
@@ -1192,7 +1207,10 @@ function renderKoMatchCard(m) {
 
   let scoreHTML;
   if (finished && m.score1 !== null && m.score2 !== null) {
-    scoreHTML = `<div class="score">${m.score1}<span class="score-sep">-</span>${m.score2}</div>`;
+    let extra = '';
+    if (m.pen1 != null && m.pen2 != null) extra = `<div style="font-size:0.68em;color:var(--secondary);font-weight:700;margin-top:1px">PK ${m.pen1}-${m.pen2}</div>`;
+    else if (m.detail && /aet|extra|延長/i.test(m.detail)) extra = `<div style="font-size:0.68em;color:var(--muted);margin-top:1px">延長</div>`;
+    scoreHTML = `<div class="score">${m.score1}<span class="score-sep">-</span>${m.score2}</div>${extra}`;
   } else {
     scoreHTML = `<div class="vs-text">vs</div>`;
   }
