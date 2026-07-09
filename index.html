@@ -418,6 +418,31 @@
       display: inline-block;
     }
 
+    /* ─── 得点者ランキング ─── */
+    .scorer-row-top { background: #fffaf0; }
+    .scorer-rank {
+      width: 28px; height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--muted);
+      font-size: 0.85em;
+      font-weight: 800;
+    }
+    .scorer-rank.gold { background: #f6c344; color: #7b5800; }
+    .scorer-rank.silver { background: #cbd5e0; color: #4a5568; }
+    .scorer-rank.bronze { background: #e8a87c; color: #7c3a10; }
+    .scorer-name { font-weight: 700; }
+    .scorer-team { font-size: 0.85em; color: var(--muted); }
+    .scorer-goals {
+      font-size: 1.25em;
+      font-weight: 800;
+      color: var(--secondary);
+    }
+    .scorer-pk { font-size: 0.72em; color: var(--muted); font-weight: 400; display: block; }
+
     @media (max-width: 520px) {
       header h1 { font-size: 1.3em; }
       .team-name { font-size: 0.82em; }
@@ -608,6 +633,45 @@ function parseEspnScores(data) {
     count++;
   });
   return { map: map, count: count };
+}
+
+// ─── 得点者ランキング（ESPNのゴール詳細から集計）──────────
+// scoreboard APIの各試合に含まれる details（ゴール・カード等のイベント）から
+// 得点者を集計する。PK戦(shootout)とオウンゴールは得点王の対象外。
+let SCORERS = [];
+function calcScorers(datasets) {
+  const players = {};   // 選手ID → { name, teamId, goals, pk }
+  const teamNames = {}; // チームID → 正式チーム名
+  datasets.forEach(data => {
+    ((data && data.events) || []).forEach(ev => {
+      const comp = (ev.competitions || [])[0];
+      if (!comp) return;
+      (comp.competitors || []).forEach(c => {
+        if (c.team && c.team.id) {
+          teamNames[c.team.id] = normTeam(c.team.displayName || c.team.name || '');
+        }
+      });
+      (comp.details || []).forEach(d => {
+        if (!d.scoringPlay || d.shootout || d.ownGoal) return;
+        const a = (d.athletesInvolved || [])[0]; // 先頭の選手が得点者
+        if (!a) return;
+        const key = a.id || a.displayName;
+        if (!players[key]) {
+          players[key] = {
+            name: a.displayName || a.fullName || '',
+            teamId: (a.team && a.team.id) || (d.team && d.team.id) || '',
+            goals: 0, pk: 0,
+          };
+        }
+        const v = d.scoreValue || 1;
+        players[key].goals += v;
+        if (d.penaltyKick) players[key].pk += v;
+      });
+    });
+  });
+  return Object.values(players)
+    .map(p => ({ name: p.name, team: teamNames[p.teamId] || '', goals: p.goals, pk: p.pk }))
+    .sort((x, y) => y.goals - x.goals || x.name.localeCompare(y.name));
 }
 
 // ─── グループ定義（正式チーム名で統一）────────────────────
@@ -811,6 +875,7 @@ function renderAll(allMatches) {
   const tabsEl = document.getElementById('tabs');
   tabsEl.innerHTML =
     `<button class="tab-btn tab-ko active" onclick="switchGroup('KO')" id="tab-KO">🏆 決勝T</button>` +
+    `<button class="tab-btn" onclick="switchGroup('SCORERS')" id="tab-SCORERS">⚽ 得点王</button>` +
     `<button class="tab-btn" onclick="switchGroup('SUMMARY')" id="tab-SUMMARY">📋 GLまとめ</button>` +
     GROUPS.map(g =>
       `<button class="tab-btn" onclick="switchGroup('${g}')" id="tab-${g}">グループ ${g}</button>`
@@ -835,7 +900,8 @@ function renderAll(allMatches) {
       const standings = calcStandings(g, matches);
       return renderGroup(g, matches, standings, false);
     }).join('') +
-    renderKnockout(KNOCKOUT_ESPN);
+    renderKnockout(KNOCKOUT_ESPN) +
+    renderScorers(SCORERS);
 
   // 再描画後も、直前まで見ていたタブを維持する（自動更新対策）
   showGroup(document.getElementById('group-' + currentGroup) ? currentGroup : 'SUMMARY');
@@ -1228,6 +1294,58 @@ function renderKoMatchCard(m) {
   </div>`;
 }
 
+// ─── 得点者ランキング 表示 ────────────────────────────────
+function renderScorers(scorers) {
+  const TOP_N = 20;
+  let body;
+  if (!scorers || scorers.length === 0) {
+    body = `<div class="ko-empty">
+      <div style="font-size:2em;margin-bottom:8px">⏳</div>
+      <div style="font-weight:600;margin-bottom:4px">得点者データ準備中</div>
+      <div style="font-size:0.85em">データ取得後、自動で表示されます</div>
+    </div>`;
+  } else {
+    let rank = 0, prevGoals = -1;
+    const rows = scorers.slice(0, TOP_N).map((p, i) => {
+      if (p.goals !== prevGoals) { rank = i + 1; prevGoals = p.goals; }
+      const medal = rank === 1 ? ' gold' : rank === 2 ? ' silver' : rank === 3 ? ' bronze' : '';
+      const pkNote = p.pk > 0 ? `<span class="scorer-pk">うちPK ${p.pk}</span>` : '';
+      return `<tr${rank <= 3 ? ' class="scorer-row-top"' : ''}>
+        <td><span class="scorer-rank${medal}">${rank}</span></td>
+        <td style="text-align:left">
+          <span class="scorer-name">${p.name}</span><br>
+          <span class="scorer-team">${ja(p.team)}</span>
+        </td>
+        <td><span class="scorer-goals">${p.goals}</span>${pkNote}</td>
+      </tr>`;
+    }).join('');
+    body = `
+    <div class="standings">
+      <div class="standings-header">🏅 得点者ランキング（ゴールデンブーツ）</div>
+      <table class="standings-table">
+        <thead><tr>
+          <th style="width:60px;text-align:center">順位</th>
+          <th style="text-align:left">選手 / 国</th>
+          <th style="width:80px">得点</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="summary-note">※ グループステージ＋決勝トーナメントの合計。オウンゴールとPK戦は含みません。上位${TOP_N}名を表示（同点は名前順）。</p>`;
+  }
+  return `
+  <div class="group-section" id="group-SCORERS">
+    <div class="group-title">
+      <div class="group-icon">⚽</div>
+      <div>
+        <h2>得点者ランキング</h2>
+        <span>試合結果と同じく自動で最新に更新されます</span>
+      </div>
+    </div>
+    ${body}
+  </div>`;
+}
+
 let currentGroup = 'SUMMARY'; // いま表示中のタブ（自動更新時に維持するため）
 
 function showGroup(g) {
@@ -1297,25 +1415,32 @@ function loadData() {
       return ms;
     });
 
+  // ESPNのレスポンスは「スコア/決勝T」の解析と「得点者集計」の両方に使うため、
+  // 解析結果(parsed)と生データ(raw)をセットで持ち回す
   const scoresP = fetch(SCORES_URL)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(parseEspnScores);
+    .then(data => ({ parsed: parseEspnScores(data), raw: data }));
 
   const knockoutP = fetch(KNOCKOUT_URL)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(parseEspnKnockoutMatches);
+    .then(data => ({ parsed: parseEspnKnockoutMatches(data), raw: data }));
 
   Promise.allSettled([scheduleP, scoresP, knockoutP]).then(results => {
     const sched = results[0], scores = results[1], ko = results[2];
     let scoreCount = 0;
     if (scores.status === 'fulfilled') {
-      LIVE_SCORES = scores.value.map;
-      scoreCount = scores.value.count;
+      LIVE_SCORES = scores.value.parsed.map;
+      scoreCount = scores.value.parsed.count;
     }
     // ESPNが実チーム名を返していればそれを優先。まだプレースホルダーなら内蔵の確定データを使う。
-    KNOCKOUT_ESPN = (ko.status === 'fulfilled' && koHasRealTeams(ko.value))
-      ? ko.value
+    KNOCKOUT_ESPN = (ko.status === 'fulfilled' && koHasRealTeams(ko.value.parsed))
+      ? ko.value.parsed
       : KNOCKOUT_FALLBACK;
+    // 得点者ランキング（グループステージ＋決勝トーナメントの全ゴールを集計）
+    SCORERS = calcScorers([
+      scores.status === 'fulfilled' ? scores.value.raw : null,
+      ko.status === 'fulfilled' ? ko.value.raw : null,
+    ].filter(Boolean));
     const matches = (sched.status === 'fulfilled')
       ? sched.value
       : FALLBACK_MATCHES.map(normalizeMatch);
